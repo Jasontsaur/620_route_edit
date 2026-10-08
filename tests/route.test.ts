@@ -13,7 +13,105 @@ import {
   type RouteData,
 } from "../lib/route";
 import { exportGpx, exportTcx, exportFit, importFile } from "../lib/files";
+import { buildElevationProfile, kilometerTicks } from "../lib/elevation";
 Object.assign(globalThis, { DOMParser });
+
+test("elevation aligns shifted starts and reversed tracks by position, not their own mileage", () => {
+  const points = Array.from({ length: 11 }, (_, i) => ({
+    lat: 25,
+    lng: 121 + i * 0.01,
+    ele: i * 10,
+  }));
+  const input: RouteData = {
+    name: "later start",
+    points: points.slice(4).map((p) => ({ ...p, ele: p.ele + 5 })),
+    waypoints: [],
+    provenance: "test",
+    overlays: [{ id: "base", name: "base", points }],
+  };
+  const profile = buildElevationProfile(input);
+  const active = profile.profiles.find((l) => l.id === "active")!;
+  const base = profile.profiles[0];
+  assert.ok(active.paths[0][0].meters > 3900);
+  assert.ok(
+    Math.abs(active.paths[0][0].meters - base.paths[0][4].meters) < 0.01,
+  );
+  assert.equal(active.paths[0][0].elevation, 45);
+  const reverse = buildElevationProfile({
+    ...input,
+    points: [...input.points].reverse(),
+  }).profiles.at(-1)!;
+  assert.ok(Math.abs(reverse.paths[0][0].meters - profile.meters) < 0.01);
+  assert.ok(reverse.paths[0][0].meters > reverse.paths[0].at(-1)!.meters);
+  assert.equal(buildElevationProfile(input, "active").reference.id, "active");
+});
+test("elevation uses segment projection and leaves missing heights, GPS gaps and distant routes unconnected", () => {
+  const input: RouteData = {
+    name: "midpoint",
+    provenance: "test",
+    waypoints: [],
+    points: [
+      { lat: 25, lng: 121.01, ele: 30 },
+      { lat: 25, lng: 121.015 },
+      { lat: 25, lng: 121.02, ele: 50 },
+      { lat: 25, lng: 121.025, ele: 60, segment: 1 },
+    ],
+    overlays: [
+      {
+        id: "base",
+        name: "base",
+        points: [
+          { lat: 25, lng: 121, ele: 0 },
+          { lat: 25, lng: 121.03, ele: 10 },
+        ],
+      },
+    ],
+  };
+  const profile = buildElevationProfile(input),
+    active = profile.profiles.at(-1)!;
+  assert.ok(Math.abs(active.paths[0][0].meters - profile.meters / 3) < 0.1);
+  assert.equal(active.paths.length, 3);
+  const far = buildElevationProfile({
+    ...input,
+    points: input.points.map((p) => ({ ...p, lat: 24 })),
+  }).profiles.at(-1)!;
+  assert.equal(far.paths.length, 0);
+  assert.ok(far.unmatched > 0);
+  const noHeight = buildElevationProfile({
+    ...input,
+    points: input.points.map(({ lat, lng }) => ({ lat, lng })),
+  }).profiles.at(-1)!;
+  assert.equal(noHeight.hasElevation, false);
+  assert.deepEqual(
+    kilometerTicks(620000),
+    Array.from({ length: 13 }, (_, i) => i * 50000),
+  );
+  assert.deepEqual(kilometerTicks(0), [0]);
+});
+test("elevation projection never bridges disconnected reference segments", () => {
+  const profile = buildElevationProfile({
+    name: "gap midpoint",
+    waypoints: [],
+    provenance: "test",
+    points: [
+      { lat: 25, lng: 121.05, ele: 10 },
+      { lat: 25, lng: 121.06, ele: 20 },
+    ],
+    overlays: [
+      {
+        id: "base",
+        name: "base",
+        points: [
+          { lat: 25, lng: 121, ele: 0 },
+          { lat: 25, lng: 121.01, ele: 0 },
+          { lat: 25, lng: 121.1, ele: 0, segment: 1 },
+          { lat: 25, lng: 121.11, ele: 0, segment: 1 },
+        ],
+      },
+    ],
+  });
+  assert.equal(profile.profiles.at(-1)!.paths.length, 0);
+});
 test("simplification preserves endpoints, corners and segment gaps", () => {
   const points = [
     { lat: 25, lng: 121 },

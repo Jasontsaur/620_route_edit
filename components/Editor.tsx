@@ -22,6 +22,7 @@ import {
   Cloud,
 } from "lucide-react";
 import RouteMap, { type Mode } from "./RouteMap";
+import ElevationProfile from "./ElevationProfile";
 import Dialogs, { type Panel } from "./Dialogs";
 import {
   checkpointSeed,
@@ -29,7 +30,6 @@ import {
   orderedWaypoints,
   activeRouteColor,
   overlayColor,
-  cumulative,
   distance,
   groups,
   officialUrl,
@@ -325,28 +325,11 @@ export default function Editor() {
       setBusy(false);
     }
   }
-  const meters = route ? distance(route.points) : 0,
-    ds = route ? cumulative(route.points) : [];
+  const meters = route ? distance(route.points) : 0;
   const stations = useMemo(
     () => (route ? orderedWaypoints(route) : []),
     [route],
   );
-  const elevation = route?.points.filter((p) => p.ele !== undefined) ?? [],
-    maxEle = Math.max(50, ...elevation.map((p) => p.ele!)),
-    minEle = Math.min(0, ...elevation.map((p) => p.ele!));
-  const elevationPath =
-    route?.points
-      .map((p, i) => ({ p, i }))
-      .filter(
-        ({ p, i }) =>
-          p.ele !== undefined &&
-          i % Math.max(1, Math.ceil(route.points.length / 700)) === 0,
-      )
-      .map(
-        ({ p, i }) =>
-          `${(ds[i] / (meters || 1)) * 1000},${82 - ((p.ele! - minEle) / (maxEle - minEle)) * 65}`,
-      )
-      .join(" ") ?? "";
   if (!route)
     return (
       <main className="loading">
@@ -710,44 +693,14 @@ export default function Editor() {
               </button>
               <span>
                 <Route size={14} />
-                路線概覽
+                全路線高程
               </span>
               <span>
                 {route.points.length.toLocaleString()} 軌跡點 ·{" "}
                 {groups(route.points).length} 段
               </span>
             </div>
-            {elevation.length > 1 ? (
-              <svg
-                className="elevation"
-                viewBox="0 0 1000 90"
-                preserveAspectRatio="none"
-                role="img"
-                aria-label="軌跡高度剖面"
-              >
-                <path
-                  d={"M " + elevationPath.replace(/ /g, " L ")}
-                  fill="none"
-                  stroke="#ef5b35"
-                  strokeWidth="1.7"
-                  vectorEffect="non-scaling-stroke"
-                />
-              </svg>
-            ) : (
-              <div className="elevation-empty">此軌跡無高度資料</div>
-            )}
-            <div className="elevation-axis">
-              <span>0 km</span>
-              <span>{(meters / 2000).toFixed(0)} km</span>
-              <span>{(meters / 1000).toFixed(1)} km</span>
-            </div>
-            <div className="elevation-caption">
-              高度{" "}
-              {elevation.length
-                ? `${Math.round(minEle)}–${Math.round(maxEle)} m`
-                : "無資料"}{" "}
-              · 里程依座標計算；編輯路段不自動貼齊道路
-            </div>
+            <ElevationProfile route={route} />
           </div>
         </div>
       </section>

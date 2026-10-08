@@ -91,7 +91,13 @@ export default function RouteMap(props: Props) {
         ...(route.overlays ?? []).flatMap((layer) => layer.points),
       ],
       height = host.current?.clientHeight ?? 650,
-      bottom = Math.min(200, height * 0.32),
+      bottom = Math.min(
+        (host.current
+          ?.closest(".canvas")
+          ?.querySelector<HTMLElement>(".elevation-card")?.offsetHeight ??
+          180) + 40,
+        height * 0.6,
+      ),
       top = Math.min(65, height * 0.15);
     if (adapter.current === "google") {
       const b = new window.google.maps.LatLngBounds();

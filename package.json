@@ -14,7 +14,7 @@
     "db:generate": "drizzle-kit generate",
     "test": "node scripts/test.mjs",
     "typecheck": "tsc --noEmit",
-    "lint:app": "eslint app/api/versions/route.ts app/page.tsx app/layout.tsx components/Editor.tsx components/Dialogs.tsx components/RouteMap.tsx lib/route.ts lib/files.ts db/index.ts db/schema.ts tests/route.test.ts scripts/test.mjs"
+    "lint:app": "eslint app/api/versions/route.ts app/page.tsx app/layout.tsx components/Editor.tsx components/Dialogs.tsx components/RouteMap.tsx components/ElevationProfile.tsx lib/route.ts lib/files.ts lib/elevation.ts db/index.ts db/schema.ts tests/route.test.ts scripts/test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
