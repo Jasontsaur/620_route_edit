@@ -36,6 +36,7 @@ type Props = {
   save: (note: string) => Promise<void>;
   exportAs: (f: "fit" | "tcx" | "gpx" | "json") => Promise<void>;
   busy: boolean;
+  storageName: string;
 };
 const clock = (s: string) =>
   new Date(s).toLocaleString("zh-TW", {
@@ -58,6 +59,7 @@ export default function Dialogs({
   save,
   exportAs,
   busy,
+  storageName,
 }: Props) {
   const [keyInput, setKeyInput] = useState(apiKey),
     [note, setNote] = useState(""),
@@ -267,7 +269,7 @@ export default function Dialogs({
               <Cloud size={17} />
               <span>
                 {(meters / 1000).toFixed(2)} km · {route.waypoints.length}{" "}
-                個點位 · 雲端保存
+                個點位 · {storageName}保存
               </span>
             </div>
             <div className="modal-actions">

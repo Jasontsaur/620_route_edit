@@ -74,6 +74,11 @@ const modeHelp = {
   waypoint: "點擊地圖新增點位，或拖曳既有點位調整位置",
 };
 export default function Editor() {
+  const storageName =
+    typeof window !== "undefined" &&
+    ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)
+      ? "本機"
+      : "雲端";
   const [route, setRoute] = useState<RouteData | null>(null),
     [mode, setMode] = useState<Mode>("browse"),
     [tab, setTab] = useState<"points" | "versions">("points"),
@@ -255,7 +260,7 @@ export default function Editor() {
       setSavedId(d.id);
       setDirty(current.current !== route);
       setPanel(null);
-      setMessage("版本已儲存到雲端。");
+      setMessage(`版本已儲存到${storageName}。`);
       await loadVersions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "儲存失敗");
@@ -360,7 +365,7 @@ export default function Editor() {
             {dirty
               ? "有未儲存的修改"
               : savedId
-                ? "已載入雲端版本"
+                ? `已載入${storageName}版本`
                 : "官方基準路線"}
           </span>
         </div>
@@ -744,6 +749,7 @@ export default function Editor() {
         save={save}
         exportAs={exportAs}
         busy={busy}
+        storageName={storageName}
       />
     </main>
   );
