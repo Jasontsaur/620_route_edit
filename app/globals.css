@@ -458,6 +458,61 @@ button.primary:hover {
   background: var(--orange);
   flex-shrink: 0;
 }
+.route-legend {
+  position: absolute;
+  top: 132px;
+  left: 24px;
+  z-index: 4;
+  width: min(300px, calc(100% - 48px));
+  max-height: min(250px, 35%);
+  overflow-y: auto;
+  background: #fffffff2;
+  border-radius: 9px;
+  padding: 12px;
+  box-shadow: 0 3px 20px #173f551a;
+  font-size: 14px;
+}
+.route-legend > strong {
+  display: block;
+  margin-bottom: 8px;
+}
+.legend-row {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  margin: 8px 0;
+}
+.legend-row > i {
+  width: 28px;
+  border-top: 4px solid;
+  flex-shrink: 0;
+}
+.legend-row > i.reference-swatch {
+  border-top-style: dashed;
+}
+.legend-row > span {
+  min-width: 0;
+  flex: 1;
+}
+.legend-row b {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.legend-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+.legend-row button {
+  padding: 5px;
+}
+.route-legend p {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 9px 0 0;
+}
 .provider {
   position: absolute;
   bottom: 8px;
@@ -917,6 +972,11 @@ code {
   }
 }
 @media (max-width: 950px) {
+  .route-legend {
+    top: 118px;
+    left: 16px;
+    width: min(280px, calc(100% - 32px));
+  }
   .brand-light {
     font-size: 15px;
   }
@@ -961,6 +1021,12 @@ code {
   }
 }
 @media (max-width: 680px) {
+  .route-legend {
+    top: 112px;
+    left: 12px;
+    max-height: 155px;
+    width: min(270px, calc(100% - 24px));
+  }
   .topbar {
     height: auto;
     min-height: 115px;

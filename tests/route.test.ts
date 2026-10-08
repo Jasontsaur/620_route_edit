@@ -8,6 +8,8 @@ import {
   groups,
   simplify,
   validateRoute,
+  orderedWaypoints,
+  addImportedRoute,
   type RouteData,
 } from "../lib/route";
 import { exportGpx, exportTcx, exportFit, importFile } from "../lib/files";
@@ -80,6 +82,62 @@ const file = (text: string | Uint8Array, name: string) =>
     [typeof text === "string" ? text : new Uint8Array(text).buffer],
     name,
   );
+test("waypoints sort by current track mileage without mutating saved order", () => {
+  const w = route.waypoints[0];
+  const input = {
+    ...route,
+    waypoints: [
+      { ...w, id: "end", ...route.points[2], officialKm: 0 },
+      { ...w, id: "start", ...route.points[0], officialKm: 999 },
+      { ...w, id: "middle", ...route.points[1] },
+    ],
+  };
+  const sorted = orderedWaypoints(input);
+  assert.deepEqual(
+    sorted.map((v) => v.waypoint.id),
+    ["start", "middle", "end"],
+  );
+  assert.ok(sorted[2].meters > sorted[1].meters);
+  assert.equal(input.waypoints[0].id, "end");
+});
+test("successive imports retain reference tracks and points; JSON restores saved layers", async () => {
+  const imported = {
+    ...route,
+    name: "新路線",
+    points: route.points.map((p) => ({ ...p, lng: p.lng + 0.01 })),
+    waypoints: [],
+  };
+  const first = addImportedRoute(route, imported);
+  assert.deepEqual(first.points, imported.points);
+  assert.deepEqual(first.overlays?.[0].points, route.points);
+  assert.deepEqual(first.waypoints, route.waypoints);
+  const second = addImportedRoute(first, { ...imported, name: "第三條" });
+  assert.equal(second.overlays?.length, 2);
+  const backup = await importFile(file(JSON.stringify(second), "layers.json"));
+  assert.deepEqual(addImportedRoute(route, backup, true), second);
+  assert.equal(route.overlays, undefined);
+  assert.throws(() =>
+    validateRoute({
+      ...second,
+      overlays: [{ id: "bad", name: "bad", points: [{ lat: NaN, lng: 121 }] }],
+    }),
+  );
+  assert.throws(
+    () =>
+      addImportedRoute(
+        {
+          ...first,
+          overlays: Array.from({ length: 8 }, (_, i) => ({
+            id: String(i),
+            name: "參考",
+            points: route.points,
+          })),
+        },
+        imported,
+      ),
+    /最多保留 8/,
+  );
+});
 function checkGeometry(actual: RouteData) {
   assert.equal(actual.points.length, route.points.length);
   actual.points.forEach((p, i) => {

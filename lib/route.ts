@@ -21,7 +21,50 @@ export type RouteData = {
   provenance: string;
   sourceUrl?: string;
   parentId?: string;
+  overlays?: { id: string; name: string; points: TrackPoint[] }[];
 };
+export const activeRouteColor = "#ef5b35";
+const overlayColors = [
+  "#1769c2",
+  "#8538b5",
+  "#087f72",
+  "#ad3367",
+  "#82620b",
+  "#455bb1",
+  "#4f772d",
+  "#795548",
+];
+export const overlayColor = (index: number) =>
+  overlayColors[index % overlayColors.length];
+
+export function orderedWaypoints(route: RouteData) {
+  const ds = cumulative(route.points);
+  return route.waypoints
+    .map((waypoint) => ({
+      waypoint,
+      meters: ds[nearest(route.points, waypoint).idx] ?? 0,
+    }))
+    .sort((a, b) => a.meters - b.meters);
+}
+
+// Keep each previous track as a reference. Full JSON backups restore their own layers.
+export function addImportedRoute(
+  current: RouteData,
+  incoming: RouteData,
+  restoreBackup = false,
+): RouteData {
+  if (restoreBackup) return validateRoute(incoming);
+  const overlays = [
+    ...(current.overlays ?? []),
+    { id: crypto.randomUUID(), name: current.name, points: current.points },
+  ];
+  const waypoints = [
+    ...new Map(
+      [...current.waypoints, ...incoming.waypoints].map((w) => [w.id, w]),
+    ).values(),
+  ];
+  return validateRoute({ ...incoming, overlays, waypoints });
+}
 export const officialUrl = "https://www.twbike.org/activity/?act=data&id=395";
 export const stravaUrl = "https://www.strava.com/routes/3539876578391353394";
 export function validPoint(p: unknown): p is TrackPoint {
@@ -188,6 +231,29 @@ export function validateRoute(data: unknown): RouteData {
   )
     throw Error(
       "路線資料無效：需有 2–50,000 個有效軌跡點，最多 500 個點位；請檢查名稱與座標。",
+    );
+  if (
+    r.overlays !== undefined &&
+    (!Array.isArray(r.overlays) ||
+      r.overlays.length > 8 ||
+      !r.overlays.every(
+        (layer) =>
+          layer &&
+          typeof layer.id === "string" &&
+          layer.id.length > 0 &&
+          layer.id.length <= 100 &&
+          typeof layer.name === "string" &&
+          layer.name.trim().length > 0 &&
+          layer.name.length <= 120 &&
+          Array.isArray(layer.points) &&
+          layer.points.length >= 2 &&
+          layer.points.length <= 50000 &&
+          layer.points.every(point),
+      ) ||
+      new Set(r.overlays.map((layer) => layer.id)).size !== r.overlays.length)
+  )
+    throw Error(
+      "參考路線資料無效：最多保留 8 條參考路線，每條需有 2–50,000 個有效軌跡點；可先在圖例移除不需要的路線。",
     );
   return r;
 }

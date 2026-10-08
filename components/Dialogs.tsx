@@ -289,7 +289,8 @@ export default function Dialogs({
             <h2>帶上路線，準備出發</h2>
             <p>
               下載編輯後的路線，匯入 Garmin Connect 再選「傳送至裝置」，同步到
-              Edge。
+              Edge。FIT／TCX／GPX 匯出目前編輯的橘色路線；JSON
+              備份另包含全部參考圖層。
             </p>
             <div className="export-options">
               <button

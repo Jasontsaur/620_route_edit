@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Route,
   MapPin,
@@ -25,10 +25,13 @@ import RouteMap, { type Mode } from "./RouteMap";
 import Dialogs, { type Panel } from "./Dialogs";
 import {
   checkpointSeed,
+  addImportedRoute,
+  orderedWaypoints,
+  activeRouteColor,
+  overlayColor,
   cumulative,
   distance,
   groups,
-  nearest,
   officialUrl,
   validateRoute,
   type RouteData,
@@ -224,16 +227,20 @@ export default function Editor() {
     setError("");
     try {
       const next = await importFile(f);
+      const restoreBackup = f.name.toLowerCase().endsWith(".json");
       if (
+        restoreBackup &&
         dirty &&
-        !window.confirm("目前編輯尚未儲存。要匯入檔案取代路線？可用復原返回。")
+        !window.confirm("要載入 JSON 備份？目前修改可用復原返回。")
       )
         return;
-      edit(next);
+      edit(route ? addImportedRoute(route, next, restoreBackup) : next);
       setSavedId(undefined);
+      setFocus(null);
+      setMode("browse");
       setFit((v) => v + 1);
       setMessage(
-        `已匯入 ${f.name}：${next.points.length.toLocaleString()} 個軌跡點。`,
+        `已匯入 ${f.name}：${next.points.length.toLocaleString()} 個軌跡點。${restoreBackup ? "已還原備份的路線圖層。" : "原路線已保留為參考圖層；橘色為目前編輯路線。"}`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "匯入失敗");
@@ -320,6 +327,10 @@ export default function Editor() {
   }
   const meters = route ? distance(route.points) : 0,
     ds = route ? cumulative(route.points) : [];
+  const stations = useMemo(
+    () => (route ? orderedWaypoints(route) : []),
+    [route],
+  );
   const elevation = route?.points.filter((p) => p.ele !== undefined) ?? [],
     maxEle = Math.max(50, ...elevation.map((p) => p.ele!)),
     minEle = Math.min(0, ...elevation.map((p) => p.ele!));
@@ -473,7 +484,7 @@ export default function Editor() {
             {tab === "points" ? (
               <>
                 <div className="list-heading">
-                  <span>起終點 / 檢錄 / 自訂</span>
+                  <span>依軌跡里程由近到遠</span>
                   <button
                     className="text-button"
                     onClick={() => {
@@ -486,8 +497,7 @@ export default function Editor() {
                   </button>
                 </div>
                 <div className="stations">
-                  {route.waypoints.map((w) => {
-                    const n = nearest(route.points, w);
+                  {stations.map(({ waypoint: w, meters: waypointMeters }) => {
                     return (
                       <button
                         className="station-row"
@@ -513,9 +523,10 @@ export default function Editor() {
                         <span className="station-content">
                           <strong>{w.name}</strong>
                           <span>
+                            {`軌跡 ${(waypointMeters / 1000).toFixed(1)} km`}
                             {w.officialKm !== undefined
-                              ? `公告 ${w.officialKm} km`
-                              : `軌跡 ${(ds[n.idx] / 1000).toFixed(1)} km`}
+                              ? ` · 公告 ${w.officialKm} km`
+                              : ""}
                             {w.cutoff
                               ? " · " + clock(w.cutoff)
                               : " · " + kinds[w.kind]}
@@ -647,6 +658,47 @@ export default function Editor() {
             <span className="orange-dot" />
             {modeHelp[mode]}
           </div>
+          <section className="route-legend" aria-label="路線圖例">
+            <strong>路線圖例</strong>
+            <div className="legend-row">
+              <i style={{ borderColor: activeRouteColor }} />
+              <span>
+                <b>{route.name}</b>
+                <small>目前編輯 · {(meters / 1000).toFixed(1)} km</small>
+              </span>
+            </div>
+            {(route.overlays ?? []).map((layer, i) => (
+              <div className="legend-row" key={layer.id}>
+                <i
+                  className="reference-swatch"
+                  style={{ borderColor: overlayColor(i) }}
+                />
+                <span>
+                  <b>{layer.name}</b>
+                  <small>
+                    參考路線 · {(distance(layer.points) / 1000).toFixed(1)} km
+                  </small>
+                </span>
+                <button
+                  className="icon-button"
+                  aria-label={`移除參考路線 ${layer.name}`}
+                  title="移除參考路線（可復原）"
+                  onClick={() =>
+                    edit({
+                      ...route,
+                      overlays: route.overlays?.filter(
+                        (l) => l.id !== layer.id,
+                      ),
+                    })
+                  }
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+            <p>編輯、里程與 Garmin 匯出以橘色路線為準</p>
+            {!apiKey && <p>設定 Google Maps 金鑰即可切換底圖</p>}
+          </section>
           <div className="elevation-card">
             <div className="elevation-heading">
               <button

@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   groups,
+  activeRouteColor,
+  overlayColor,
   nearestSegment,
   type RouteData,
   type TrackPoint,
@@ -83,7 +85,11 @@ export default function RouteMap(props: Props) {
   }
   function fit() {
     if (!map.current) return;
-    const ps = state.current.route.points,
+    const route = state.current.route,
+      ps = [
+        ...route.points,
+        ...(route.overlays ?? []).flatMap((layer) => layer.points),
+      ],
       height = host.current?.clientHeight ?? 650,
       bottom = Math.min(200, height * 0.32),
       top = Math.min(65, height * 0.15);
@@ -242,16 +248,62 @@ export default function RouteMap(props: Props) {
     if (!ready || !map.current) return;
     clear(layers);
     const s = props;
+    // Wide, dashed reference strokes remain visible beneath coincident active tracks.
+    (s.route.overlays ?? []).forEach((layer, index) => {
+      groups(layer.points).forEach((ps) => {
+        if (adapter.current === "google") {
+          layers.current.push(
+            new window.google.maps.Polyline({
+              map: map.current,
+              path: ps,
+              strokeColor: overlayColor(index),
+              strokeWeight: 9,
+              strokeOpacity: 0,
+              clickable: false,
+              geodesic: true,
+              zIndex: index,
+              icons: [
+                {
+                  icon: {
+                    path: "M 0,-1 0,1",
+                    strokeColor: overlayColor(index),
+                    strokeOpacity: 0.8,
+                    strokeWeight: 9,
+                    scale: 3,
+                  },
+                  offset: "0",
+                  repeat: "20px",
+                },
+              ],
+            }),
+          );
+        } else {
+          layers.current.push(
+            L.current!.polyline(
+              ps.map((p) => [p.lat, p.lng]),
+              {
+                color: overlayColor(index),
+                weight: 9,
+                opacity: 0.75,
+                dashArray: "12 8",
+                interactive: false,
+              },
+            ).addTo(map.current),
+          );
+        }
+      });
+    });
     groups(s.route.points).forEach((ps) => {
       if (adapter.current === "google") {
         const line = new window.google.maps.Polyline({
           map: map.current,
           path: ps,
-          strokeColor: "#ef5b35",
+          strokeColor: activeRouteColor,
           strokeWeight: 4,
           strokeOpacity: 0.95,
           clickable: true,
           geodesic: true,
+          zIndex: 10,
         });
         line.addListener("click", (e: any) =>
           click({ lat: e.latLng.lat(), lng: e.latLng.lng() }),
@@ -261,7 +313,7 @@ export default function RouteMap(props: Props) {
         const line = L.current!.polyline(
           ps.map((p) => [p.lat, p.lng]),
           {
-            color: "#ef5b35",
+            color: activeRouteColor,
             weight: 4,
             opacity: 0.95,
             bubblingMouseEvents: false,
@@ -349,9 +401,6 @@ export default function RouteMap(props: Props) {
         aria-label="路線互動地圖"
       />
       <span className="provider">{provider}</span>
-      {!props.apiKey && (
-        <div className="map-key-note">設定 Google Maps 金鑰即可切換底圖</div>
-      )}
     </div>
   );
 }
