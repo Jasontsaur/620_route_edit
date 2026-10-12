@@ -95,6 +95,56 @@ export function cumulative(points: TrackPoint[]) {
     return d;
   });
 }
+
+export function routeMilestones(points: TrackPoint[]) {
+  const ds = cumulative(points),
+    markers: { lat: number; lng: number; meters: number }[] = [];
+  let meters = 50000;
+  const rad = Math.PI / 180;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1],
+      b = points[i],
+      length = ds[i] - ds[i - 1];
+    if (length <= 0 || (a.segment ?? 0) !== (b.segment ?? 0)) continue;
+    while (meters <= ds[i] + 1e-6) {
+      const fraction = Math.max(0, Math.min(1, (meters - ds[i - 1]) / length));
+      // Interpolate on the same great-circle segment used for distance/map rendering.
+      const lat1 = a.lat * rad,
+        lat2 = b.lat * rad,
+        dlng = (b.lng - a.lng) * rad;
+      const bearing = Math.atan2(
+        Math.sin(dlng) * Math.cos(lat2),
+        Math.cos(lat1) * Math.sin(lat2) -
+          Math.sin(lat1) * Math.cos(lat2) * Math.cos(dlng),
+      );
+      const angle = (length / 6371000) * fraction;
+      const lat = Math.asin(
+        Math.max(
+          -1,
+          Math.min(
+            1,
+            Math.sin(lat1) * Math.cos(angle) +
+              Math.cos(lat1) * Math.sin(angle) * Math.cos(bearing),
+          ),
+        ),
+      );
+      const lng =
+        a.lng * rad +
+        Math.atan2(
+          Math.sin(bearing) * Math.sin(angle) * Math.cos(lat1),
+          Math.cos(angle) - Math.sin(lat1) * Math.sin(lat),
+        );
+      markers.push({
+        lat: lat / rad,
+        lng: ((lng / rad + 540) % 360) - 180,
+        meters,
+      });
+      meters += 50000;
+    }
+  }
+  return markers;
+}
+
 export function distance(points: TrackPoint[]) {
   return cumulative(points).at(-1) ?? 0;
 }

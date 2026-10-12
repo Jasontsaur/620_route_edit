@@ -7,6 +7,7 @@ import {
   activeRouteColor,
   overlayColor,
   nearestSegment,
+  routeMilestones,
   type RouteData,
   type TrackPoint,
   type Waypoint,
@@ -331,6 +332,45 @@ export default function RouteMap(props: Props) {
         layers.current.push(line);
       }
     });
+
+    routeMilestones(s.route.points).forEach((p) => {
+      const label = `${p.meters / 1000} km`;
+      const title = `目前編輯路線：${label}`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="32" viewBox="0 0 68 32"><path d="M34 23v6" stroke="${activeRouteColor}" stroke-width="2"/><circle cx="34" cy="29" r="2.5" fill="${activeRouteColor}" stroke="white"/><rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="${activeRouteColor}" stroke-width="2"/><text x="34" y="16" text-anchor="middle" fill="#153e55" font-family="Arial,sans-serif" font-size="12" font-weight="700">${label}</text></svg>`;
+      if (adapter.current === "google") {
+        layers.current.push(
+          new window.google.maps.Marker({
+            map: map.current,
+            position: p,
+            title,
+            clickable: false,
+            draggable: false,
+            zIndex: 20,
+            icon: {
+              url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+              scaledSize: new window.google.maps.Size(68, 32),
+              anchor: new window.google.maps.Point(34, 29),
+            },
+          }),
+        );
+      } else {
+        layers.current.push(
+          L.current!.marker([p.lat, p.lng], {
+            title,
+            interactive: false,
+            keyboard: false,
+            zIndexOffset: -100,
+            icon: L.current!.divIcon({
+              className: "distance-marker",
+              html: svg,
+              iconSize: [68, 32],
+              iconAnchor: [34, 29],
+            }),
+          }).addTo(map.current),
+        );
+      }
+    });
+
     s.route.waypoints.forEach((w) => {
       const label =
         w.id === "start"

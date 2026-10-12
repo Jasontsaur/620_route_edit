@@ -5,6 +5,8 @@ import { DOMParser } from "@xmldom/xmldom";
 import { Decoder, Stream, Encoder, Profile } from "@garmin/fitsdk";
 import {
   distance,
+  haversine,
+  routeMilestones,
   groups,
   simplify,
   validateRoute,
@@ -15,6 +17,72 @@ import {
 import { exportGpx, exportTcx, exportFit, importFile } from "../lib/files";
 import { buildElevationProfile, kilometerTicks } from "../lib/elevation";
 Object.assign(globalThis, { DOMParser });
+
+test("map milestones follow distance around bends and interpolate between samples", () => {
+  const points = [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 0.6 },
+    { lat: 0.6, lng: 0.6 },
+  ];
+  const saved = structuredClone(points),
+    markers = routeMilestones(points);
+  assert.deepEqual(
+    markers.map((p) => p.meters),
+    [50000, 100000],
+  );
+  assert.ok(Math.abs(markers[0].lat) < 1e-8);
+  assert.ok(Math.abs(haversine(points[0], markers[0]) - 50000) < 0.01);
+  assert.ok(Math.abs(markers[1].lng - 0.6) < 1e-8);
+  assert.ok(
+    Math.abs(
+      haversine(points[0], points[1]) +
+        haversine(points[1], markers[1]) -
+        100000,
+    ) < 0.01,
+  );
+  assert.deepEqual(points, saved);
+});
+test("map milestones ignore GPS gaps, repeated samples and short routes", () => {
+  const points = [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 0.3 },
+    { lat: 10, lng: 10, segment: 1 },
+    { lat: 10.3, lng: 10, segment: 1 },
+  ];
+  const markers = routeMilestones(points);
+  assert.equal(markers.length, 1);
+  assert.ok(markers[0].lat > 10 && markers[0].lat < 10.3);
+  assert.ok(
+    Math.abs(
+      haversine(points[1], points[2]) +
+        haversine(points[3], markers[0]) -
+        50000,
+    ) < 0.01,
+  );
+  assert.deepEqual(routeMilestones(points.slice(0, 3)), []);
+  assert.deepEqual(routeMilestones([]), []);
+});
+test("map milestones include exact 50 km endpoints once and cross the date line", () => {
+  const lng = ((50000 / 6371000) * 180) / Math.PI;
+  const points = [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng },
+    { lat: 0, lng },
+  ];
+  const markers = routeMilestones(points);
+  assert.equal(markers.length, 1);
+  assert.ok(haversine(markers[0], points[1]) < 0.01);
+  const crossing = routeMilestones([
+    { lat: 0, lng: 179.8 },
+    { lat: 0, lng: -179.6 },
+  ]);
+  assert.equal(crossing.length, 1);
+  assert.ok(crossing[0].lng < -179.6 && crossing[0].lng >= -180);
+  assert.ok(
+    Math.abs(haversine({ lat: 0, lng: 179.8 }, crossing[0]) - 50000) < 0.01,
+  );
+});
 
 test("elevation aligns shifted starts and reversed tracks by position, not their own mileage", () => {
   const points = Array.from({ length: 11 }, (_, i) => ({
