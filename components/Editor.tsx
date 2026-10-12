@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import RouteMap, { type Mode } from "./RouteMap";
 import ElevationProfile from "./ElevationProfile";
+import type { MapViewport } from "../lib/elevation";
 import Dialogs, { type Panel } from "./Dialogs";
 import {
   checkpointSeed,
@@ -89,6 +90,7 @@ export default function Editor() {
     [selected, setSelected] = useState<Waypoint | null>(null),
     [focus, setFocus] = useState<Waypoint | null>(null),
     [fit, setFit] = useState(0),
+    [viewport, setViewport] = useState<MapViewport | null>(null),
     [apiKey, setApiKey] = useState(""),
     [versions, setVersions] = useState<Version[]>([]),
     [versionError, setVersionError] = useState(""),
@@ -592,6 +594,7 @@ export default function Editor() {
             onSelect={select}
             onMove={move}
             onError={setError}
+            onViewport={setViewport}
           />
           <div className="map-toolbar">
             <div>
@@ -700,7 +703,7 @@ export default function Editor() {
                 {groups(route.points).length} 段
               </span>
             </div>
-            <ElevationProfile route={route} />
+            <ElevationProfile route={route} viewport={viewport} />
           </div>
         </div>
       </section>

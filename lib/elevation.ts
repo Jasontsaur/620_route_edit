@@ -28,7 +28,7 @@ export function kilometerTicks(meters: number) {
     (_, i) => i * 50000,
   );
 }
-type Sample = { meters: number; elevation: number };
+type Sample = TrackPoint & { meters: number; elevation: number };
 type Edge = {
   ax: number;
   ay: number;
@@ -189,7 +189,14 @@ export function buildElevationProfile(route: RouteData, referenceId?: string) {
           (sourceDs[i] - sourceDs[previousIndex]) * 2 + 1000
       )
         paths.push([]);
-      paths.at(-1)!.push({ meters: match.meters, elevation: p.ele! });
+      paths
+        .at(-1)!
+        .push({
+          lat: p.lat,
+          lng: p.lng,
+          meters: match.meters,
+          elevation: p.ele!,
+        });
       previous = match.meters;
       previousIndex = i;
       previousGroup = match.group;
@@ -230,4 +237,92 @@ export function buildElevationProfile(route: RouteData, referenceId?: string) {
     maxElevation,
     elevationTicks,
   };
+}
+
+export type MapViewport = {
+  south: number;
+  north: number;
+  west: number;
+  east: number;
+};
+export type MileageRange = { start: number; end: number };
+
+function visibleFraction(a: TrackPoint, b: TrackPoint, bounds: MapViewport) {
+  const span =
+    bounds.east >= bounds.west
+      ? bounds.east - bounds.west
+      : bounds.east - bounds.west + 360;
+  const ax = (((a.lng - bounds.west) % 360) + 360) % 360;
+  const dx = ((b.lng - a.lng + 540) % 360) - 180;
+  let first = Infinity,
+    last = -Infinity;
+  for (const shift of [-360, 0, 360]) {
+    let start = 0,
+      end = 1;
+    const clip = (origin: number, delta: number, low: number, high: number) => {
+      if (Math.abs(delta) < 1e-12) return origin >= low && origin <= high;
+      const t0 = (low - origin) / delta,
+        t1 = (high - origin) / delta;
+      start = Math.max(start, Math.min(t0, t1));
+      end = Math.min(end, Math.max(t0, t1));
+      return start <= end;
+    };
+    if (!clip(a.lat, b.lat - a.lat, bounds.south, bounds.north)) continue;
+    if (span < 360 && !clip(ax + shift, dx, 0, span)) continue;
+    first = Math.min(first, start);
+    last = Math.max(last, end);
+  }
+  return first === Infinity ? null : { start: first, end: last };
+}
+
+export function visibleMileageRange(
+  profile: ReturnType<typeof buildElevationProfile>,
+  viewport: MapViewport | null,
+): MileageRange | null {
+  if (!viewport) return { start: 0, end: profile.meters };
+  let start = Infinity,
+    end = -Infinity;
+  const include = (
+    a: TrackPoint & { meters: number },
+    b: TrackPoint & { meters: number },
+  ) => {
+    const part = visibleFraction(a, b, viewport);
+    if (!part) return;
+    const first = a.meters + (b.meters - a.meters) * part.start;
+    const last = a.meters + (b.meters - a.meters) * part.end;
+    start = Math.min(start, first, last);
+    end = Math.max(end, first, last);
+  };
+  // Full reference geometry keeps viewport edges accurate even without height samples.
+  const points = profile.reference.points,
+    ds = cumulative(points);
+  points.forEach((p, i) => {
+    const b = { ...p, meters: ds[i] };
+    include(b, b);
+    if (i && (p.segment ?? 0) === (points[i - 1].segment ?? 0))
+      include({ ...points[i - 1], meters: ds[i - 1] }, b);
+  });
+  // Also include visible aligned curves when the reference itself is just outside the map.
+  for (const layer of profile.profiles)
+    for (const path of layer.paths)
+      path.forEach((p, i) => {
+        include(p, p);
+        if (i) include(path[i - 1], p);
+      });
+  return start === Infinity ? null : { start, end };
+}
+
+export function mileageRangeTicks(range: MileageRange) {
+  const ticks: number[] = [];
+  for (
+    let d = Math.ceil(range.start / 50000) * 50000;
+    d <= range.end;
+    d += 50000
+  )
+    ticks.push(d);
+  const clearance = (range.end - range.start) * 0.06;
+  if (!ticks.length || ticks[0] - range.start > clearance)
+    ticks.unshift(range.start);
+  if (range.end - ticks[ticks.length - 1] > clearance) ticks.push(range.end);
+  return ticks;
 }

@@ -15,8 +15,169 @@ import {
   type RouteData,
 } from "../lib/route";
 import { exportGpx, exportTcx, exportFit, importFile } from "../lib/files";
-import { buildElevationProfile, kilometerTicks } from "../lib/elevation";
+import {
+  buildElevationProfile,
+  kilometerTicks,
+  visibleMileageRange,
+  mileageRangeTicks,
+} from "../lib/elevation";
 Object.assign(globalThis, { DOMParser });
+
+test("viewport mileage includes segments crossing the map with both endpoints outside", () => {
+  const route: RouteData = {
+    name: "crossing",
+    waypoints: [],
+    provenance: "test",
+    points: [
+      { lat: 0, lng: 0, ele: 0 },
+      { lat: 0, lng: 1, ele: 100 },
+    ],
+  };
+  const profile = buildElevationProfile(route);
+  const range = visibleMileageRange(profile, {
+    south: -0.1,
+    north: 0.1,
+    west: 0.2,
+    east: 0.8,
+  })!;
+  assert.ok(Math.abs(range.start - profile.meters * 0.2) < 0.01);
+  assert.ok(Math.abs(range.end - profile.meters * 0.8) < 0.01);
+  const tighter = visibleMileageRange(profile, {
+    south: -0.1,
+    north: 0.1,
+    west: 0.4,
+    east: 0.6,
+  })!;
+  assert.ok(tighter.start > range.start && tighter.end < range.end);
+  assert.deepEqual(visibleMileageRange(profile, null), {
+    start: 0,
+    end: profile.meters,
+  });
+  assert.equal(
+    visibleMileageRange(profile, { south: 2, north: 3, west: 2, east: 3 }),
+    null,
+  );
+  assert.deepEqual(
+    mileageRangeTicks({ start: 120000, end: 180000 }),
+    [120000, 150000, 180000],
+  );
+  assert.deepEqual(
+    mileageRangeTicks({ start: 51000, end: 52000 }),
+    [51000, 52000],
+  );
+  assert.deepEqual(mileageRangeTicks({ start: 0, end: 0 }), [0]);
+});
+test("viewport preserves geographic alignment for a shifted and reversed visible track", () => {
+  const base = [
+    { lat: 0, lng: 0, ele: 0 },
+    { lat: 0, lng: 1, ele: 100 },
+  ];
+  const input: RouteData = {
+    name: "later reversed",
+    waypoints: [],
+    provenance: "test",
+    points: [
+      { lat: 0.005, lng: 0.8, ele: 80 },
+      { lat: 0.005, lng: 0.4, ele: 40 },
+    ],
+    overlays: [{ id: "base", name: "base", points: base }],
+  };
+  const profile = buildElevationProfile(input);
+  const range = visibleMileageRange(profile, {
+    south: 0.004,
+    north: 0.006,
+    west: 0.5,
+    east: 0.7,
+  })!;
+  assert.ok(Math.abs(range.start - profile.meters * 0.5) < 0.1);
+  assert.ok(Math.abs(range.end - profile.meters * 0.7) < 0.1);
+  assert.ok(range.start > 50000);
+  const own = buildElevationProfile(input, "active");
+  const ownRange = visibleMileageRange(own, {
+    south: 0.004,
+    north: 0.006,
+    west: 0.5,
+    east: 0.7,
+  })!;
+  assert.ok(Math.abs(ownRange.start - own.meters * 0.25) < 0.1);
+  assert.ok(Math.abs(ownRange.end - own.meters * 0.75) < 0.1);
+});
+test("viewport never includes GPS gaps and uses min/max across separated visible portions", () => {
+  const profile = buildElevationProfile({
+    name: "gap",
+    waypoints: [],
+    provenance: "test",
+    points: [
+      { lat: 0, lng: 0, ele: 0 },
+      { lat: 0, lng: 0.1, ele: 10 },
+      { lat: 0, lng: 1, segment: 1, ele: 20 },
+      { lat: 0, lng: 1.1, segment: 1, ele: 30 },
+    ],
+  });
+  assert.equal(
+    visibleMileageRange(profile, {
+      south: -0.1,
+      north: 0.1,
+      west: 0.4,
+      east: 0.6,
+    }),
+    null,
+  );
+  assert.deepEqual(
+    visibleMileageRange(profile, {
+      south: -0.1,
+      north: 0.1,
+      west: -0.1,
+      east: 1.2,
+    }),
+    { start: 0, end: profile.meters },
+  );
+  const noHeights = buildElevationProfile({
+    name: "no heights",
+    waypoints: [],
+    provenance: "test",
+    points: [
+      { lat: 0, lng: 0 },
+      { lat: 0, lng: 1 },
+    ],
+  });
+  assert.ok(
+    visibleMileageRange(noHeights, {
+      south: -0.1,
+      north: 0.1,
+      west: 0.4,
+      east: 0.6,
+    })!.start > 0,
+  );
+});
+test("viewport longitude clipping handles date-line views and whole-world bounds", () => {
+  const profile = buildElevationProfile({
+    name: "date line",
+    waypoints: [],
+    provenance: "test",
+    points: [
+      { lat: 0, lng: 179, ele: 0 },
+      { lat: 0, lng: -179, ele: 100 },
+    ],
+  });
+  const range = visibleMileageRange(profile, {
+    south: -1,
+    north: 1,
+    west: 179.5,
+    east: -179.5,
+  })!;
+  assert.ok(Math.abs(range.start - profile.meters * 0.25) < 0.01);
+  assert.ok(Math.abs(range.end - profile.meters * 0.75) < 0.01);
+  assert.deepEqual(
+    visibleMileageRange(profile, {
+      south: -90,
+      north: 90,
+      west: -180,
+      east: 180,
+    }),
+    { start: 0, end: profile.meters },
+  );
+});
 
 test("map milestones follow distance around bends and interpolate between samples", () => {
   const points = [

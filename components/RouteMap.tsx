@@ -13,6 +13,7 @@ import {
   type Waypoint,
 } from "../lib/route";
 import type * as Leaflet from "leaflet";
+import type { MapViewport } from "../lib/elevation";
 export type Mode = "browse" | "edit" | "append" | "waypoint";
 type Props = {
   route: RouteData;
@@ -25,6 +26,7 @@ type Props = {
   onSelect: (w: Waypoint) => void;
   onMove: (id: string, p: TrackPoint) => void;
   onError: (s: string) => void;
+  onViewport: (viewport: MapViewport | null) => void;
 };
 declare global {
   interface Window {
@@ -57,6 +59,7 @@ export default function RouteMap(props: Props) {
     adapter = useRef<"google" | "osm">("osm"),
     L = useRef<typeof Leaflet | null>(null),
     layers = useRef<any[]>([]),
+    lastViewport = useRef<MapViewport | null>(null),
     handles = useRef<any[]>([]),
     [ready, setReady] = useState(0),
     [provider, setProvider] = useState("載入地圖中…");
@@ -78,6 +81,28 @@ export default function RouteMap(props: Props) {
       s.onPoints(ps);
     }
   };
+
+  function publishViewport() {
+    const bounds = map.current?.getBounds();
+    if (!bounds) return;
+    const sw = bounds.getSouthWest(),
+      ne = bounds.getNorthEast();
+    const viewport =
+      adapter.current === "google"
+        ? { south: sw.lat(), west: sw.lng(), north: ne.lat(), east: ne.lng() }
+        : { south: sw.lat, west: sw.lng, north: ne.lat, east: ne.lng };
+    const previous = lastViewport.current;
+    if (
+      previous &&
+      (Object.keys(viewport) as (keyof MapViewport)[]).every(
+        (key) => Math.abs(viewport[key] - previous[key]) < 1e-9,
+      )
+    )
+      return;
+    lastViewport.current = viewport;
+    state.current.onViewport(viewport);
+  }
+
   function clear(which: React.RefObject<any[]>) {
     which.current.forEach((x) =>
       adapter.current === "google" ? x.setMap(null) : x.remove(),
@@ -178,6 +203,8 @@ export default function RouteMap(props: Props) {
     let cancelled = false;
     const el = host.current!;
     async function start() {
+      lastViewport.current = null;
+      state.current.onViewport(null);
       try {
         if (props.apiKey) {
           window.gm_authFailure = () => {
@@ -201,7 +228,10 @@ export default function RouteMap(props: Props) {
           map.current.addListener("click", (e: any) =>
             click({ lat: e.latLng.lat(), lng: e.latLng.lng() }),
           );
-          map.current.addListener("idle", renderHandles);
+          map.current.addListener("idle", () => {
+            renderHandles();
+            publishViewport();
+          });
           setProvider("Google Maps");
         } else {
           const leaflet = await import("leaflet");
@@ -226,11 +256,15 @@ export default function RouteMap(props: Props) {
           map.current.on("click", (e: Leaflet.LeafletMouseEvent) =>
             click({ lat: e.latlng.lat, lng: e.latlng.lng }),
           );
-          map.current.on("moveend", renderHandles);
+          map.current.on("moveend", () => {
+            renderHandles();
+            publishViewport();
+          });
           setProvider("OpenStreetMap 備用底圖");
         }
         setReady((v) => v + 1);
         fit();
+        publishViewport();
       } catch (e) {
         state.current.onError(e instanceof Error ? e.message : "無法載入地圖");
         setProvider("地圖載入失敗");
