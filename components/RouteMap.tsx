@@ -117,11 +117,13 @@ export default function RouteMap(props: Props) {
         ...(route.overlays ?? []).flatMap((layer) => layer.points),
       ],
       height = host.current?.clientHeight ?? 650,
+      card = host.current
+        ?.closest(".canvas")
+        ?.querySelector<HTMLElement>(".elevation-card"),
       bottom = Math.min(
-        (host.current
-          ?.closest(".canvas")
-          ?.querySelector<HTMLElement>(".elevation-card")?.offsetHeight ??
-          180) + 40,
+        (card && getComputedStyle(card).position === "absolute"
+          ? card.offsetHeight
+          : 0) + 40,
         height * 0.6,
       ),
       top = Math.min(65, height * 0.15);
@@ -201,6 +203,7 @@ export default function RouteMap(props: Props) {
   }
   useEffect(() => {
     let cancelled = false;
+    let resizeObserver: ResizeObserver | undefined;
     const el = host.current!;
     async function start() {
       lastViewport.current = null;
@@ -262,6 +265,16 @@ export default function RouteMap(props: Props) {
           });
           setProvider("OpenStreetMap 備用底圖");
         }
+
+        resizeObserver = new ResizeObserver(() => {
+          if (!map.current || cancelled) return;
+          if (adapter.current === "osm")
+            map.current.invalidateSize({ pan: false });
+          else window.google.maps.event.trigger(map.current, "resize");
+          publishViewport();
+        });
+        resizeObserver.observe(el);
+
         setReady((v) => v + 1);
         fit();
         publishViewport();
@@ -273,6 +286,7 @@ export default function RouteMap(props: Props) {
     void start();
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       if (map.current) {
         clear(layers);
         clear(handles);

@@ -1,5 +1,5 @@
 "use client";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   buildElevationProfile,
   elevationLayers,
@@ -26,6 +26,22 @@ export default function ElevationProfile({
     () => visibleMileageRange(profile, viewport),
     [profile, viewport],
   );
+
+  const scrollHost = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(760);
+  const hasRange = range !== null;
+  useEffect(() => {
+    const el = scrollHost.current;
+    if (!el) return;
+    const resize = () => {
+      if (el.clientWidth > 0) setChartWidth(el.clientWidth);
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(el);
+    resize();
+    return () => observer.disconnect();
+  }, [hasRange]);
+
   const ticks = range ? mileageRangeTicks(range) : [];
   const clipId = useId();
   const axis = range ?? { start: 0, end: profile.meters };
@@ -34,7 +50,7 @@ export default function ElevationProfile({
   const axisEnd = axis.start === axis.end ? axis.end + 0.5 : axis.end;
 
   const layers = elevationLayers(route),
-    width = Math.max(760, ticks.length * 68 + 70);
+    width = Math.max(chartWidth, ticks.length * 54 + 70);
   const left = 54,
     right = width - 20,
     top = 22,
@@ -65,6 +81,7 @@ export default function ElevationProfile({
       </label>
       {range ? (
         <div
+          ref={scrollHost}
           className="profile-scroll"
           tabIndex={0}
           role="region"

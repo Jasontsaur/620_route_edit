@@ -472,7 +472,7 @@ button.primary:hover {
   box-shadow: 0 3px 20px #173f551a;
   font-size: 14px;
 }
-.route-legend > strong {
+.route-legend strong {
   display: block;
   margin-bottom: 8px;
 }
@@ -1208,5 +1208,189 @@ code {
   * {
     transition: none !important;
     scroll-behavior: auto !important;
+  }
+}
+
+.mobile-panel-toggle {
+  display: none;
+}
+@media (max-width: 680px), (max-width: 950px) and (pointer: coarse) {
+  .topbar {
+    height: auto;
+    min-height: 0;
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 8px;
+  }
+  .brand {
+    gap: 8px;
+  }
+  .brand strong {
+    font-size: 20px;
+  }
+  .brand-light {
+    font-size: 16px;
+  }
+  .brand-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+  .brand-icon svg {
+    width: 21px;
+    height: 21px;
+  }
+  .brand small {
+    display: none;
+  }
+  .top-actions {
+    width: 100%;
+    gap: 5px;
+  }
+  .top-actions button {
+    flex: 1;
+    min-width: 0;
+    height: 40px;
+    padding: 6px;
+    gap: 5px;
+  }
+  .top-actions button span {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .top-actions .icon-button {
+    flex: 0 0 40px;
+  }
+  .workspace {
+    height: auto;
+    min-height: 0;
+    flex-direction: column-reverse;
+  }
+  .canvas {
+    height: auto;
+    min-height: 0;
+    flex: none;
+    overflow: visible;
+    padding-bottom: 10px;
+  }
+  .map-wrap {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: clamp(280px, calc(100svh - 108px), 740px);
+    overflow: hidden;
+  }
+  .map-toolbar {
+    top: 8px;
+    left: 8px;
+    padding: 3px;
+    gap: 0;
+  }
+  .map-toolbar button {
+    width: 36px;
+    height: 44px;
+    padding: 0;
+  }
+  .map-toolbar button span {
+    display: none;
+  }
+  .tool-separator {
+    margin: 0 3px;
+  }
+  .fit-button {
+    top: 8px;
+    right: 8px;
+    width: 42px;
+    height: 50px;
+    padding: 0;
+  }
+  .fit-button span {
+    display: none;
+  }
+  .map-help {
+    top: 64px;
+    left: 8px;
+    max-width: calc(100% - 16px);
+    padding: 6px 9px;
+  }
+  .canvas[data-mode="browse"] .map-help {
+    display: none;
+  }
+  .route-legend,
+  .elevation-card {
+    position: relative;
+    inset: auto;
+    width: calc(100% - 20px);
+    max-height: none;
+    margin: 10px 10px 0;
+    padding: 0;
+    overflow: visible;
+    box-shadow: none;
+    border: 1px solid var(--line);
+    background: white;
+    border-radius: 9px;
+  }
+  .mobile-panel-toggle {
+    display: flex;
+    width: 100%;
+    min-height: 48px;
+    justify-content: flex-start;
+    padding: 10px 12px;
+    border: 0;
+    background: transparent;
+  }
+  .mobile-panel-toggle > span {
+    flex: 1;
+    text-align: left;
+  }
+  [data-expanded="true"] > .mobile-panel-toggle > svg:last-child {
+    transform: rotate(90deg);
+  }
+  .mobile-panel-content {
+    display: none;
+    padding: 0 12px 12px;
+  }
+  [data-expanded="true"] > .mobile-panel-content {
+    display: block;
+  }
+  .route-legend .mobile-panel-content {
+    max-height: 250px;
+    overflow-y: auto;
+  }
+  .route-legend strong {
+    display: none;
+  }
+  .elevation-heading {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .elevation-heading > span:last-child {
+    margin-left: auto;
+    font-size: 11px;
+  }
+  .profile-reference {
+    flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .profile-reference select {
+    flex: 1;
+    max-width: 100%;
+    font-size: 16px;
+  }
+  .profile-legend {
+    max-height: 72px;
+  }
+  .elevation-card .elevation-caption {
+    font-size: 12px;
+  }
+  .provider {
+    max-width: calc(100% - 80px);
+    font-size: 10px;
+  }
+  .sidebar {
+    width: 100%;
+    height: 600px;
+    border-right: 0;
+    border-top: 1px solid var(--line);
   }
 }

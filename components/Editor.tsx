@@ -90,6 +90,9 @@ export default function Editor() {
     [selected, setSelected] = useState<Waypoint | null>(null),
     [focus, setFocus] = useState<Waypoint | null>(null),
     [fit, setFit] = useState(0),
+    [mobilePanel, setMobilePanel] = useState<"legend" | "elevation" | null>(
+      null,
+    ),
     [viewport, setViewport] = useState<MapViewport | null>(null),
     [apiKey, setApiKey] = useState(""),
     [versions, setVersions] = useState<Version[]>([]),
@@ -582,7 +585,7 @@ export default function Editor() {
             </a>
           </footer>
         </aside>
-        <div className="canvas">
+        <div className="canvas" data-mode={mode}>
           <RouteMap
             route={route}
             mode={mode}
@@ -636,7 +639,12 @@ export default function Editor() {
               <Redo2 size={17} />
             </button>
           </div>
-          <button className="fit-button" onClick={() => setFit((f) => f + 1)}>
+          <button
+            className="fit-button"
+            aria-label="顯示全線"
+            title="顯示全線"
+            onClick={() => setFit((f) => f + 1)}
+          >
             <Maximize size={16} />
             <span>全線</span>
           </button>
@@ -644,66 +652,101 @@ export default function Editor() {
             <span className="orange-dot" />
             {modeHelp[mode]}
           </div>
-          <section className="route-legend" aria-label="路線圖例">
-            <strong>路線圖例</strong>
-            <div className="legend-row">
-              <i style={{ borderColor: activeRouteColor }} />
-              <span>
-                <b>{route.name}</b>
-                <small>目前編輯 · {(meters / 1000).toFixed(1)} km</small>
-              </span>
-            </div>
-            {(route.overlays ?? []).map((layer, i) => (
-              <div className="legend-row" key={layer.id}>
-                <i
-                  className="reference-swatch"
-                  style={{ borderColor: overlayColor(i) }}
-                />
+          <section
+            className="route-legend"
+            aria-label="路線圖例"
+            data-expanded={mobilePanel === "legend"}
+          >
+            <button
+              className="mobile-panel-toggle"
+              aria-expanded={mobilePanel === "legend"}
+              aria-controls="route-legend-content"
+              onClick={() =>
+                setMobilePanel((p) => (p === "legend" ? null : "legend"))
+              }
+            >
+              <Route size={17} />
+              <span>路線圖例 · {1 + (route.overlays?.length ?? 0)} 條</span>
+              <ChevronRight size={17} />
+            </button>
+            <div id="route-legend-content" className="mobile-panel-content">
+              <strong>路線圖例</strong>
+              <div className="legend-row">
+                <i style={{ borderColor: activeRouteColor }} />
                 <span>
-                  <b>{layer.name}</b>
-                  <small>
-                    參考路線 · {(distance(layer.points) / 1000).toFixed(1)} km
-                  </small>
+                  <b>{route.name}</b>
+                  <small>目前編輯 · {(meters / 1000).toFixed(1)} km</small>
                 </span>
-                <button
-                  className="icon-button"
-                  aria-label={`移除參考路線 ${layer.name}`}
-                  title="移除參考路線（可復原）"
-                  onClick={() =>
-                    edit({
-                      ...route,
-                      overlays: route.overlays?.filter(
-                        (l) => l.id !== layer.id,
-                      ),
-                    })
-                  }
-                >
-                  <X size={14} />
-                </button>
               </div>
-            ))}
-            <p>編輯、里程與 Garmin 匯出以橘色路線為準</p>
-            {!apiKey && <p>設定 Google Maps 金鑰即可切換底圖</p>}
-          </section>
-          <div className="elevation-card">
-            <div className="elevation-heading">
-              <button
-                className="text-button"
-                onClick={() => setPanel("simplify")}
-                disabled={busy}
-              >
-                簡化軌跡
-              </button>
-              <span>
-                <Route size={14} />
-                全路線高程
-              </span>
-              <span>
-                {route.points.length.toLocaleString()} 軌跡點 ·{" "}
-                {groups(route.points).length} 段
-              </span>
+              {(route.overlays ?? []).map((layer, i) => (
+                <div className="legend-row" key={layer.id}>
+                  <i
+                    className="reference-swatch"
+                    style={{ borderColor: overlayColor(i) }}
+                  />
+                  <span>
+                    <b>{layer.name}</b>
+                    <small>
+                      參考路線 · {(distance(layer.points) / 1000).toFixed(1)} km
+                    </small>
+                  </span>
+                  <button
+                    className="icon-button"
+                    aria-label={`移除參考路線 ${layer.name}`}
+                    title="移除參考路線（可復原）"
+                    onClick={() =>
+                      edit({
+                        ...route,
+                        overlays: route.overlays?.filter(
+                          (l) => l.id !== layer.id,
+                        ),
+                      })
+                    }
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              <p>編輯、里程與 Garmin 匯出以橘色路線為準</p>
+              {!apiKey && <p>設定 Google Maps 金鑰即可切換底圖</p>}
             </div>
-            <ElevationProfile route={route} viewport={viewport} />
+          </section>
+          <div
+            className="elevation-card"
+            data-expanded={mobilePanel === "elevation"}
+          >
+            <button
+              className="mobile-panel-toggle"
+              aria-expanded={mobilePanel === "elevation"}
+              aria-controls="elevation-content"
+              onClick={() =>
+                setMobilePanel((p) => (p === "elevation" ? null : "elevation"))
+              }
+            >
+              <Route size={17} />
+              <span>高度圖</span>
+              <ChevronRight size={17} />
+            </button>
+            <div id="elevation-content" className="mobile-panel-content">
+              <div className="elevation-heading">
+                <button
+                  className="text-button"
+                  onClick={() => setPanel("simplify")}
+                  disabled={busy}
+                >
+                  簡化軌跡
+                </button>
+                <span>
+                  <Route size={14} />
+                  全路線高程
+                </span>
+                <span>
+                  {route.points.length.toLocaleString()} 軌跡點 ·{" "}
+                  {groups(route.points).length} 段
+                </span>
+              </div>
+              <ElevationProfile route={route} viewport={viewport} />
+            </div>
           </div>
         </div>
       </section>
