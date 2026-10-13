@@ -12,12 +12,14 @@ import {
   validateRoute,
   orderedWaypoints,
   addImportedRoute,
+  builtInRoute,
   type RouteData,
 } from "../lib/route";
 import { exportGpx, exportTcx, exportFit, importFile } from "../lib/files";
 import {
   buildElevationProfile,
   kilometerTicks,
+  elevationLayers,
   visibleMileageRange,
   mileageRangeTicks,
 } from "../lib/elevation";
@@ -800,4 +802,58 @@ test("streamed XML validates namespaces and well-formedness across byte chunks",
     ),
     /500/,
   );
+});
+
+test("built-in composition combines two differently colored routes and official checkpoints", async () => {
+  const official = JSON.parse(
+    await readFile("public/data/twb-2026.json", "utf8"),
+  );
+  const ride = {
+    name: "Synthetic public test",
+    provenance: "test only",
+    points: official.points.slice(0, 3),
+    waypoints: [],
+  };
+  const initial = builtInRoute(official, ride);
+  assert.equal(initial.points.length, 3);
+  assert.equal(initial.name, ride.name);
+  assert.equal(initial.overlays?.length, 1);
+  assert.equal(initial.overlays![0].points.length, 2658);
+  assert.equal(initial.overlays![0].name, official.name);
+  assert.equal(initial.waypoints.length, 8);
+  const layers = elevationLayers(initial);
+  assert.equal(layers.length, 2);
+  assert.notEqual(layers[0].color, layers[1].color);
+  assert.equal(
+    buildElevationProfile(initial).reference.id,
+    "overlay:twb-2026-default",
+  );
+  assert.deepEqual(validateRoute(JSON.parse(JSON.stringify(initial))), initial);
+  assert.equal(ride.waypoints.length, 0);
+});
+
+test("published built-in ride has 3892 points and both defaults fit a saved version", async () => {
+  const official = JSON.parse(
+    await readFile("public/data/twb-2026.json", "utf8"),
+  );
+  const ride = validateRoute(
+    JSON.parse(await readFile("public/data/520-activity-slim.json", "utf8")),
+  );
+  const initial = builtInRoute(official, ride);
+  assert.equal(initial.name, "520 騎乘紀錄（瘦身）");
+  assert.equal(initial.points.length, 3892);
+  assert.equal(initial.overlays?.length, 1);
+  assert.equal(initial.overlays![0].points.length, 2658);
+  assert.equal(initial.waypoints.length, 8);
+  assert.ok(
+    distance(initial.points) > 516000 && distance(initial.points) < 517000,
+  );
+  assert.ok(distance(initial.overlays![0].points) > 600000);
+  assert.equal(groups(initial.points).length, 1);
+  assert.ok(initial.points.every((p) => p.ele !== undefined));
+  assert.ok(
+    Buffer.byteLength(JSON.stringify({ route: initial, note: "default" })) <
+      1800000,
+  );
+  assert.equal(buildElevationProfile(initial).profiles.length, 2);
 });

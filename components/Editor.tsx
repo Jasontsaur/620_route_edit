@@ -28,7 +28,7 @@ import type { ImportSummary } from "../lib/compact-import";
 import type { MapViewport } from "../lib/elevation";
 import Dialogs, { type Panel } from "./Dialogs";
 import {
-  checkpointSeed,
+  builtInRoute,
   addImportedRoute,
   orderedWaypoints,
   activeRouteColor,
@@ -133,16 +133,23 @@ export default function Editor() {
   }
   useEffect(() => {
     let active = true;
-    fetch("/data/twb-2026.json")
-      .then((r) => {
-        if (!r.ok) throw Error("官方基準軌跡載入失敗");
-        return r.json();
+
+    Promise.all(
+      [
+        { url: "/data/twb-2026.json", label: "TWB 四極點620" },
+        { url: "/data/520-activity-slim.json", label: "520 騎乘紀錄（瘦身）" },
+      ].map(async ({ url, label }) => {
+        const response = await fetch(url);
+        if (!response.ok) throw Error(`${label} 預設路線載入失敗`);
+        return response.json();
+      }),
+    )
+      .then(([official, ride]) => {
+        if (active) setRoute(builtInRoute(official, ride));
       })
-      .then((d) => {
-        if (active)
-          setRoute({ ...validateRoute(d), waypoints: clone(checkpointSeed) });
-      })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
     void Promise.resolve().then(() =>
       setApiKey(localStorage.getItem("620-google-key") ?? ""),
     );
@@ -341,7 +348,7 @@ export default function Editor() {
       <main className="loading">
         <Route size={38} />
         <h1>620 路線工作室</h1>
-        <p>{error || "載入官方路線…"}</p>
+        <p>{error || "載入預設雙路線…"}</p>
         {error && <button onClick={() => location.reload()}>重新載入</button>}
       </main>
     );
@@ -366,7 +373,7 @@ export default function Editor() {
               ? "有未儲存的修改"
               : savedId
                 ? `已載入${storageName}版本`
-                : "官方基準路線"}
+                : "預設雙路線"}
           </span>
         </div>
         <div className="top-actions">
@@ -575,7 +582,7 @@ export default function Editor() {
           </div>
           <footer className="sidebar-footer">
             <span className="mini-route" />
-            <span>官方嵌入 Strava 軌跡</span>
+            <span>TWB 官方路線資料</span>
             <a
               href={officialUrl}
               target="_blank"

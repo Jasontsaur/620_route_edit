@@ -37,6 +37,27 @@ const overlayColors = [
 export const overlayColor = (index: number) =>
   overlayColors[index % overlayColors.length];
 
+export function builtInRoute(
+  officialInput: unknown,
+  rideInput: unknown,
+): RouteData {
+  const official = validateRoute(officialInput),
+    ride = validateRoute(rideInput);
+  return validateRoute({
+    ...ride,
+    waypoints: [
+      ...new Map(
+        [...checkpointSeed.map((w) => ({ ...w })), ...ride.waypoints].map(
+          (w) => [w.id, w],
+        ),
+      ).values(),
+    ],
+    overlays: [
+      { id: "twb-2026-default", name: official.name, points: official.points },
+    ],
+  });
+}
+
 export function orderedWaypoints(route: RouteData) {
   const ds = cumulative(route.points);
   return route.waypoints
