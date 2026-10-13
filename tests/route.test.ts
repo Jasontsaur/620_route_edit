@@ -21,7 +21,61 @@ import {
   visibleMileageRange,
   mileageRangeTicks,
 } from "../lib/elevation";
+import { versionOwner } from "../lib/version-owner";
 Object.assign(globalThis, { DOMParser });
+
+test("anonymous version storage creates independent browser identities without login", () => {
+  const a = versionOwner(new Request("https://example.test/api/versions"));
+  const b = versionOwner(new Request("https://example.test/api/versions"));
+  assert.match(a.owner, /^anon:[a-f0-9]{64}$/);
+  assert.notEqual(a.owner, b.owner);
+  assert.match(a.headers["Set-Cookie"], /HttpOnly; SameSite=Lax; Secure$/);
+  assert.equal(a.headers["Cache-Control"], "no-store");
+});
+test("anonymous version cookie persists ownership and cannot select an account namespace", () => {
+  const first = versionOwner(new Request("https://example.test/api/versions"));
+  const cookie = first.headers["Set-Cookie"].split(";")[0];
+  const next = versionOwner(
+    new Request("https://example.test/api/versions", {
+      headers: { cookie: "other=x; " + cookie },
+    }),
+  );
+  assert.equal(next.owner, first.owner);
+  for (const value of [
+    "user-id",
+    "anon:invalid",
+    "%61".repeat(64),
+    "a".repeat(63),
+    "a".repeat(65),
+  ]) {
+    const context = versionOwner(
+      new Request("https://example.test/api/versions", {
+        headers: { cookie: "route_editor_visitor=" + value },
+      }),
+    );
+    assert.match(context.owner, /^anon:[a-f0-9]{64}$/);
+    assert.notEqual(context.owner, value);
+  }
+});
+test("previous signed-in versions remain scoped to optional trusted Sites identity", () => {
+  const anonymous = versionOwner(
+    new Request("https://example.test/api/versions"),
+  );
+  const request = new Request("https://example.test/api/versions", {
+    headers: { cookie: anonymous.headers["Set-Cookie"].split(";")[0] },
+  });
+  const existing = versionOwner(request, "previous-account-id");
+  assert.equal(existing.owner, "previous-account-id");
+  assert.equal(existing.headers["Set-Cookie"], undefined);
+  assert.notEqual(versionOwner(request).owner, existing.owner);
+});
+test("local anonymous version storage works on HTTP while hosted cookies are secure", () => {
+  const context = versionOwner(
+    new Request("http://127.0.0.1:8787/api/versions"),
+  );
+  assert.match(context.headers["Set-Cookie"], /HttpOnly; SameSite=Lax$/);
+  assert.match(context.headers["Set-Cookie"], /Path=\/; Max-Age=31536000/);
+});
 
 test("viewport mileage includes segments crossing the map with both endpoints outside", () => {
   const route: RouteData = {

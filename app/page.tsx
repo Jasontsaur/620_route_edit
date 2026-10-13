@@ -1,6 +1,4 @@
 import Editor from "../components/Editor";
-import { requireChatGPTUser } from "./chatgpt-auth";
-export default async function Home() {
-  await requireChatGPTUser("/");
+export default function Home() {
   return <Editor />;
 }

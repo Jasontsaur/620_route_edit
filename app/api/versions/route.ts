@@ -1,13 +1,15 @@
 import { getRawDb } from "../../../db";
 import { getChatGPTUser } from "../../chatgpt-auth";
 import { distance, validateRoute } from "../../../lib/route";
-async function owner() {
-  return (await getChatGPTUser())?.userId;
+import { versionOwner } from "../../../lib/version-owner";
+
+async function owner(request: Request) {
+  return versionOwner(request, (await getChatGPTUser())?.userId);
 }
 export async function GET(request: Request) {
-  const user = await owner();
-  if (!user)
-    return Response.json({ error: "請登入後存取雲端版本。" }, { status: 401 });
+  const identity = await owner(request);
+  const json = (data: unknown, status = 200) =>
+    Response.json(data, { status, headers: identity.headers });
   try {
     const db = getRawDb();
     const id = new URL(request.url).searchParams.get("id");
@@ -16,37 +18,27 @@ export async function GET(request: Request) {
         .prepare(
           "SELECT id, payload FROM route_versions WHERE id = ? AND owner = ?",
         )
-        .bind(id, user)
+        .bind(id, identity.owner)
         .first<{ id: string; payload: string }>();
-      if (!row)
-        return Response.json({ error: "找不到版本。" }, { status: 404 });
-      return Response.json(
-        { route: JSON.parse(row.payload), id: row.id },
-        { headers: { "Cache-Control": "no-store" } },
-      );
+      if (!row) return json({ error: "找不到版本。" }, 404);
+      return json({ route: JSON.parse(row.payload), id: row.id });
     }
     const rows = await db
       .prepare(
         "SELECT id, name, note, created, parent, distance FROM route_versions WHERE owner = ? ORDER BY created DESC LIMIT 100",
       )
-      .bind(user)
+      .bind(identity.owner)
       .all();
-    return Response.json(
-      { versions: rows.results },
-      { headers: { "Cache-Control": "no-store" } },
-    );
+    return json({ versions: rows.results });
   } catch (e) {
     console.error("Version read failed", e);
-    return Response.json(
+    return json(
       { error: "雲端版本暫時無法讀取；目前編輯仍保留在頁面，請稍後重試。" },
-      { status: 503 },
+      503,
     );
   }
 }
 export async function POST(request: Request) {
-  const user = await owner();
-  if (!user)
-    return Response.json({ error: "請登入後儲存版本。" }, { status: 401 });
   if (
     request.headers.get("origin") &&
     request.headers.get("origin") !== new URL(request.url).origin
@@ -70,6 +62,9 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  const identity = await owner(request);
+  const json = (data: unknown, status = 200) =>
+    Response.json(data, { status, headers: identity.headers });
   try {
     const db = getRawDb(),
       id = crypto.randomUUID(),
@@ -80,7 +75,7 @@ export async function POST(request: Request) {
       )
       .bind(
         id,
-        user,
+        identity.owner,
         body.route.name,
         body.note,
         created,
@@ -89,12 +84,12 @@ export async function POST(request: Request) {
         JSON.stringify(body.route),
       )
       .run();
-    return Response.json({ id, created }, { status: 201 });
+    return json({ id, created }, 201);
   } catch (e) {
     console.error("Version save failed", e);
-    return Response.json(
+    return json(
       { error: "版本未儲存成功；請保留頁面或下載備份，稍後重試。" },
-      { status: 503 },
+      503,
     );
   }
 }
