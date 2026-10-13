@@ -29,8 +29,8 @@ type Props = {
   close: () => void;
   route: RouteData;
   edit: (r: RouteData) => void;
-  apiKey: string;
-  setApiKey: (s: string) => void;
+  managementToken: string;
+  mapsConfigStatus: "loading" | "server" | "legacy" | "missing" | "error";
   selected: Waypoint | null;
   setSelected: (w: Waypoint) => void;
   save: (note: string) => Promise<void>;
@@ -52,8 +52,8 @@ export default function Dialogs({
   close,
   route,
   edit,
-  apiKey,
-  setApiKey,
+  mapsConfigStatus,
+  managementToken,
   selected,
   setSelected,
   save,
@@ -61,7 +61,10 @@ export default function Dialogs({
   busy,
   storageName,
 }: Props) {
-  const [keyInput, setKeyInput] = useState(apiKey),
+  const [keyInput, setKeyInput] = useState(""),
+    [keySaving, setKeySaving] = useState(false),
+    [keyResult, setKeyResult] = useState(""),
+    [keySaved, setKeySaved] = useState(false),
     [note, setNote] = useState(""),
     [tolerance, setTolerance] = useState(4);
   const dialog = useRef<HTMLElement>(null);
@@ -186,59 +189,113 @@ export default function Dialogs({
         {panel === "settings" && (
           <>
             <h2>地圖設定</h2>
-            <p>設定金鑰後，路線與點位會顯示在 Google Maps 互動底圖。</p>
-            <label>
-              Maps JavaScript API 金鑰
-              <input
-                type="password"
-                value={keyInput}
-                onChange={(e) => setKeyInput(e.target.value)}
-                autoComplete="off"
-                placeholder="AIza…"
-              />
-            </label>
+            <p role="status">
+              {mapsConfigStatus === "server"
+                ? "已使用後端共用金鑰，所有裝置套用相同設定。"
+                : mapsConfigStatus === "legacy"
+                  ? "目前暫用此瀏覽器原有金鑰；尚未讀到後端共用金鑰。"
+                  : mapsConfigStatus === "loading"
+                    ? "正在讀取後端地圖設定…"
+                    : mapsConfigStatus === "error"
+                      ? "後端設定暫時無法讀取，請稍後重新檢查。"
+                      : "後端尚未設定金鑰，目前使用 OpenStreetMap 備用底圖。"}
+            </p>
+            {managementToken ? (
+              <>
+                <p className="hint">
+                  這是你的私密管理設定頁。金鑰會存入後端資料庫，所有裝置共用；管理連結只在有限時間內有效，請勿分享。
+                </p>
+                <label>
+                  Maps JavaScript API 金鑰
+                  <input
+                    type="password"
+                    value={keyInput}
+                    autoComplete="off"
+                    placeholder="AIza…"
+                    onChange={(event) => {
+                      setKeyInput(event.target.value);
+                      setKeySaved(false);
+                      setKeyResult("");
+                    }}
+                  />
+                </label>
+                <button
+                  className="primary"
+                  disabled={keySaving || !keyInput.trim()}
+                  onClick={async () => {
+                    setKeySaving(true);
+                    setKeyResult("");
+                    try {
+                      const response = await fetch("/api/maps-config", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                          Authorization: "Bearer " + managementToken,
+                        },
+                        body: JSON.stringify({ apiKey: keyInput.trim() }),
+                      });
+                      const result = (await response.json()) as {
+                        error?: string;
+                      };
+                      if (!response.ok)
+                        throw Error(result.error || "金鑰儲存失敗");
+                      try {
+                        localStorage.removeItem("620-google-key");
+                      } catch {
+                        /* Storage may be disabled. */
+                      }
+                      setKeyInput("");
+                      setKeySaved(true);
+                      setKeyResult(
+                        "金鑰已存入後端。請先儲存路線，再按『重新檢查後端設定』載入地圖。",
+                      );
+                    } catch (error) {
+                      setKeyResult(
+                        error instanceof Error ? error.message : "金鑰儲存失敗",
+                      );
+                    } finally {
+                      setKeySaving(false);
+                    }
+                  }}
+                >
+                  {keySaving ? "儲存中…" : "儲存金鑰到後端"}
+                </button>
+                {keyResult && (
+                  <p role={keySaved ? "status" : "alert"}>{keyResult}</p>
+                )}
+              </>
+            ) : (
+              <p className="hint">
+                共用金鑰由網站擁有者透過私密管理設定頁修改，公開訪客無法覆寫。也可由主機管理者設定秘密環境變數
+                GOOGLE_MAPS_API_KEY 作為備用。
+              </p>
+            )}
             <p className="hint">
-              金鑰只保存在此瀏覽器，不會進入 GitHub 或路線版本。請啟用 Maps
-              JavaScript API，並將網站限制設為{" "}
+              Google Maps 載入時仍會把瀏覽器金鑰傳給瀏覽器。請限制 API 為 Maps
+              JavaScript API，網站限制設為{" "}
               <code>
                 {typeof location !== "undefined" ? location.origin + "/*" : ""}
               </code>
-              。
+              。 地圖右上角「全線」下方可切換地圖、衛星與地形。
             </p>
             <a
               className="external-text"
-              href="https://developers.google.com/maps/documentation/javascript/get-api-key"
+              href="https://developers.google.com/maps/api-security-best-practices"
               target="_blank"
               rel="noreferrer"
             >
-              Google 官方設定說明 <ExternalLink size={14} />
+              Google 官方金鑰設定說明 <ExternalLink size={14} />
             </a>
+            {mapsConfigStatus === "legacy" && (
+              <p className="hint">
+                原有瀏覽器金鑰僅作移轉期間備用，不會自動上傳。完成後端設定後會優先使用共用金鑰。
+              </p>
+            )}
+            <p className="hint">重新載入前，請先儲存未保存的路線編輯。</p>
             <div className="modal-actions">
-              <button
-                onClick={() => {
-                  localStorage.removeItem("620-google-key");
-                  if (apiKey) location.reload();
-                  else {
-                    setKeyInput("");
-                    close();
-                  }
-                }}
-              >
-                清除金鑰
-              </button>
-              <button
-                className="primary"
-                onClick={() => {
-                  localStorage.setItem("620-google-key", keyInput.trim());
-                  if (apiKey && keyInput.trim() !== apiKey) {
-                    location.reload();
-                    return;
-                  }
-                  setApiKey(keyInput.trim());
-                  close();
-                }}
-              >
-                套用設定
+              <button onClick={close}>關閉</button>
+              <button className="primary" onClick={() => location.reload()}>
+                重新檢查後端設定
               </button>
             </div>
           </>

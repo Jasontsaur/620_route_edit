@@ -13,3 +13,9 @@ export const versions = sqliteTable(
   },
   (table) => [index("versions_owner_created").on(table.owner, table.created)],
 );
+
+export const mapSettings = sqliteTable("map_settings", {
+  id: text("id").primaryKey(),
+  apiKey: text("api_key").notNull(),
+  updated: text("updated").notNull(),
+});

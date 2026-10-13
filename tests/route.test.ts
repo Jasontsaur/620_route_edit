@@ -857,3 +857,79 @@ test("published built-in ride has 3892 points and both defaults fit a saved vers
   );
   assert.equal(buildElevationProfile(initial).profiles.length, 2);
 });
+
+test("shared Maps settings reject public writes, incorrect origins, invalid and expired capabilities", async () => {
+  const { canManageMaps } = await import("../lib/maps-settings");
+  const token = "a".repeat(64),
+    expires = "2000";
+  const request = (origin: string, authorization: string) =>
+    new Request("https://example.com/api/maps-config", {
+      method: "POST",
+      headers: { origin, authorization },
+    });
+  assert.equal(
+    canManageMaps(
+      request("https://example.com", "Bearer " + token),
+      token,
+      expires,
+      1000,
+    ),
+    true,
+  );
+  for (const [origin, supplied] of [
+    ["", token],
+    ["https://evil.example", token],
+    ["https://example.com", "b".repeat(64)],
+    ["https://example.com", ""],
+  ])
+    assert.equal(
+      canManageMaps(
+        request(origin, "Bearer " + supplied),
+        token,
+        expires,
+        1000,
+      ),
+      false,
+    );
+  assert.equal(
+    canManageMaps(
+      request("https://example.com", "Bearer " + token),
+      undefined,
+      expires,
+      1000,
+    ),
+    false,
+  );
+  assert.equal(
+    canManageMaps(
+      request("https://example.com", "Bearer " + token),
+      token,
+      "invalid",
+      1000,
+    ),
+    false,
+  );
+  assert.equal(
+    canManageMaps(
+      request("https://example.com", "Bearer " + token),
+      token,
+      expires,
+      2000,
+    ),
+    false,
+  );
+});
+
+test("Maps settings accept browser keys while rejecting script and whitespace injection", async () => {
+  const { validBrowserMapsKey } = await import("../lib/maps-settings");
+  assert.equal(validBrowserMapsKey("  AIza" + "x".repeat(35) + "  "), true);
+  for (const key of [
+    null,
+    {},
+    "",
+    "AIza<script>alert(1)</script>",
+    "AIza" + "x".repeat(101),
+    "AIza" + "x".repeat(25) + "\nother",
+  ])
+    assert.equal(validBrowserMapsKey(key), false);
+});

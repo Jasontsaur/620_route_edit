@@ -62,7 +62,9 @@ export default function RouteMap(props: Props) {
     lastViewport = useRef<MapViewport | null>(null),
     handles = useRef<any[]>([]),
     [ready, setReady] = useState(0),
-    [mapType, setMapType] = useState<"roadmap" | "satellite">("roadmap"),
+    [mapType, setMapType] = useState<"roadmap" | "satellite" | "terrain">(
+      "roadmap",
+    ),
     [provider, setProvider] = useState("載入地圖中…");
   useEffect(() => {
     state.current = props;
@@ -384,8 +386,8 @@ export default function RouteMap(props: Props) {
     });
 
     routeMilestones(s.route.points).forEach((p) => {
-      const label = `${p.meters / 1000} km`;
-      const title = `目前編輯路線：${label}`;
+      const label = String(p.meters / 1000);
+      const title = `目前編輯路線：${label} 公里`;
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="32" viewBox="0 0 68 32"><path d="M34 23v6" stroke="${activeRouteColor}" stroke-width="2"/><circle cx="34" cy="29" r="2.5" fill="${activeRouteColor}" stroke="white"/><rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="${activeRouteColor}" stroke-width="2"/><text x="34" y="16" text-anchor="middle" fill="#153e55" font-family="Arial,sans-serif" font-size="12" font-weight="700">${label}</text></svg>`;
       if (adapter.current === "google") {
         layers.current.push(
@@ -511,12 +513,17 @@ export default function RouteMap(props: Props) {
             value={mapType}
             onChange={(e) =>
               setMapType(
-                e.target.value === "satellite" ? "satellite" : "roadmap",
+                e.target.value === "terrain"
+                  ? "terrain"
+                  : e.target.value === "satellite"
+                    ? "satellite"
+                    : "roadmap",
               )
             }
           >
             <option value="roadmap">地圖</option>
             <option value="satellite">衛星</option>
+            <option value="terrain">地形</option>
           </select>
         </label>
       )}

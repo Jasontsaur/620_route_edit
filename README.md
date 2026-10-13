@@ -20,15 +20,23 @@ TWB 2026 四極點620 的繁體中文路線編輯器。可編輯路線、管理�
 
 沿途點位依目前編輯軌跡的最近里程由小到大排列，公告里程另行標示。雲端版本與 JSON 備份包含參考路線；Garmin 匯出與側欄里程以橘色路線為準。「全線」會涵蓋所有路線，即使原路線與匯入路線重疊，寬虛線仍可與橘色實線區分。
 
-地圖沿目前編輯的橘色路線每 50km 顯示一個里程標籤（50、100、150km…），按實際軌跡長度計算並定位在相鄰軌跡點之間；不把 GPS 分段空隙算入里程。編輯、匯入、復原或載入版本後，標籤會更新。Google Maps 與備用底圖均支援，標籤不會擋住點擊或拖曳編輯。
+地圖沿目前編輯的橘色路線每 50km 顯示一個里程標籤（50、100、150…，只顯示數字），按實際軌跡長度計算並定位在相鄰軌跡點之間；不把 GPS 分段空隙算入里程。編輯、匯入、復原或載入版本後，標籤會更新。Google Maps 與備用底圖均支援，標籤不會擋住點擊或拖曳編輯。
 
 高程圖同時呈現所有路線，顏色與地圖相同。移動或縮放地圖後，圖表自動以地圖內可見路段的最低至最高基準里程作為橫軸範圍，包含跨越視窗邊界、但端點在畫面外的路段；所有曲線共用此範圍並裁切畫面外資料。保留每 50km 刻度，較小範圍補上邊界里程；「全線」恢復全線範圍。若畫面中沒有可對齊路段，顯示提示。分離的可見路段以共同里程上下限顯示，GPS 分段空隙仍不連線。預設使用最早保留的原路線作為位置對齊基準，可從「位置對齊基準」切換。橫軸為基準路線的里程，每 50km 標示刻度；其他路線的 GPS 位置投影到基準的相近路段，起點不同或反向騎乘不會把各自的 0km 錯當成同一位置。縱軸為原檔高度（公尺），共用高度刻度。缺少高度、GPS 斷點、或距基準超過 1km 的路段留空，圖例會標示無資料或無法對齊。局部峰谷保留在繪圖取樣中；窄螢幕可橫向捲動查看完整刻度。這不會改寫路線座標、原始高度或 Garmin 匯出內容。
 
 ## Google Maps
 
-使用右上角「地圖設定」輸入啟用 **Maps JavaScript API** 的 Google Cloud 瀏覽器金鑰；依 Google 要求設定專案計費和網站 HTTP referrer 限制。設定面板顯示目前網站應允許的來源。Google Maps 載入成功後，地圖右上方「全線」下方會出現「地圖／衛星」選單，可直接切換底圖，路線、點位與高程圖保留。備用 OpenStreetMap 底圖不顯示此選單。
+金鑰改由後端資料庫 map_settings 共用保存，所有裝置讀取同一設定。網站擁有者透過私密管理連結開啟設定頁，貼上金鑰後按「儲存金鑰到後端」，再重新檢查設定。公開設定面板只顯示狀態與說明，無法修改金鑰。保留管理輸入功能，之後可再移除。
 
-金鑰只存於本機瀏覽器的 localStorage，不上傳至版本資料庫或 GitHub。瀏覽器金鑰本來就會送往 Google，務必設網站與 API 限制。尚無金鑰時使用標示清楚的 OpenStreetMap 備用底圖。清除或變更已載入的 Google 金鑰會重新整理頁面，請先儲存版本。
+管理連結以 256-bit 隨機能力權杖授權，權杖與期限分別存於 Sites 的秘密環境變數 MAPS_SETUP_TOKEN、MAPS_SETUP_EXPIRES_AT（Unix 毫秒）；本次管理連結有效 24 小時。連結權杖放在 URL fragment，開頁立即從網址列移除，只留在頁面記憶體，不寫入 Cookie、localStorage 或 GitHub，也不由公開 API 回傳。POST /api/maps-config 必須通過權杖、期限及同來源檢查，限制 4KB JSON 請求與有效金鑰格式；只有儲存成功才移除舊瀏覽器金鑰。連結請視同管理密碼，不要分享。過期後由主機擁有者更新秘密值並重新部署，開啟新的管理連結。
+
+GET /api/maps-config 不快取地回傳 Maps JavaScript API 的瀏覽器金鑰，管理權杖永遠不回傳。也可設定秘密環境變數 GOOGLE_MAPS_API_KEY 作為未填入資料庫前的備用；資料庫設定優先。不要使用 NEXT_PUBLIC_ 前綴，不要把真實金鑰寫入原始碼或 GitHub。Sites 秘密環境變數變更後需重新部署。
+
+啟用 **Maps JavaScript API**、專案計費，並將金鑰的應用程式限制設為網站 HTTP referrer、API 限制設為 Maps JavaScript API。正式網站來源為 https://twb-620-route-editor.purplebread.chatgpt.site/*；設定面板會顯示目前來源。瀏覽器型 Maps JavaScript API 載入時必須使用金鑰，後端存放不會讓金鑰在瀏覽器完全不可見，請依 [Google 官方安全說明](https://developers.google.com/maps/api-security-best-practices) 限制使用來源。
+
+Google Maps 成功載入後，地圖右上方「全線」下方的選單提供「地圖／衛星／地形」。切換時保留路線、點位與高程圖。備用 OpenStreetMap 不顯示 Google 圖層選單。未設定後端金鑰時會暫用此瀏覽器以前保存的金鑰，僅讀取、不自動上傳或新增本機設定；沒有舊金鑰則使用 OpenStreetMap。重新檢查設定會重新整理頁面，請先儲存編輯。
+
+本機測試可在忽略追蹤的 .dev.vars 設定 GOOGLE_MAPS_API_KEY，使用 Wrangler 本機執行；請勿提交此檔案。正式 Sites 環境變數需由主機管理，不是由 .dev.vars 部署。
 
 ## 匯出到 Garmin Edge
 
@@ -68,8 +76,8 @@ npm test
 npm run build
 ```
 
-React 19、Vinext／Vite、Leaflet、Google Maps JavaScript API、Garmin FIT SDK、Cloudflare D1／Drizzle。`lib/route.ts` 管理幾何與點位，`lib/files.ts` 處理 Garmin 檔案，`app/api/versions/route.ts` 管理免登入的雲端版本；`lib/version-owner.ts` 管理匿名儲存識別碼。
+React 19、Vinext／Vite、Leaflet、Google Maps JavaScript API、Garmin FIT SDK、Cloudflare D1／Drizzle。`lib/route.ts` 管理幾何與點位，`lib/files.ts` 處理 Garmin 檔案，`app/api/maps-config/route.ts` 管理共用地圖設定；`app/api/versions/route.ts` 管理免登入的雲端版本；`lib/version-owner.ts` 管理匿名儲存識別碼。
 
-每次匯入上限 100MB、原始單條最多 100 萬軌跡點、500 點位；原始點數超過 12,000 點會自動瘦身後再驗證及匯入，逐步採用 2–50m 位置／1–10m 高度容差，目標 12,000 點，瘦身後仍不得超過 50,000 點。保留各 GPS 分段端點、轉彎、主要高程變化、缺失高度邊界，並每 500m 保留定位錨點；無法保留必要斷點而縮至上限時，會提示分段匯入。GPX／TCX／FIT 與 JSON 備份（含參考圖層）皆適用，點位不會自動刪除。支援 Web Worker 的瀏覽器在背景解析及簡化，並顯示處理階段及前後點數；GPX／TCX 以串流 XML 解析，不建立整棵 DOM，也不保留心率等感測擴充資料，以降低記憶體用量。原始檔案不會改寫。簡化後量測里程可能減少，原檔請保留供比對。雲端單版 JSON 上限仍為 1.8MB，多次匯入的參考圖層過多時可移除不需要的圖層。金鑰、資料庫、個人路線版本與開發快取不會提交 GitHub，GitHub 同步的是程式和公開基準資料。
+每次匯入上限 100MB、原始單條最多 100 萬軌跡點、500 點位；原始點數超過 12,000 點會自動瘦身後再驗證及匯入，逐步採用 2–50m 位置／1–10m 高度容差，目標 12,000 點，瘦身後仍不得超過 50,000 點。保留各 GPS 分段端點、轉彎、主要高程變化、缺失高度邊界，並每 500m 保留定位錨點；無法保留必要斷點而縮至上限時，會提示分段匯入。GPX／TCX／FIT 與 JSON 備份（含參考圖層）皆適用，點位不會自動刪除。支援 Web Worker 的瀏覽器在背景解析及簡化，並顯示處理階段及前後點數；GPX／TCX 以串流 XML 解析，不建立整棵 DOM，也不保留心率等感測擴充資料，以降低記憶體用量。原始檔案不會改寫。簡化後量測里程可能減少，原檔請保留供比對。雲端單版 JSON 上限仍為 1.8MB，多次匯入的參考圖層過多時可移除不需要的圖層。金鑰、資料庫、後端地圖設定、個人路線版本與開發快取不會提交 GitHub，GitHub 同步的是程式和公開基準資料。
 
 GitHub Actions 執行應用 lint、TypeScript、檔案測試與正式建置。Sites 部署使用 `.openai/hosting.json` 的既有站台與 D1 綁定；migration 位於 `drizzle/`，不應以空白資料表覆蓋生產資料。

@@ -91,6 +91,10 @@ export default function Editor() {
     ),
     [viewport, setViewport] = useState<MapViewport | null>(null),
     [apiKey, setApiKey] = useState(""),
+    [managementToken, setManagementToken] = useState(""),
+    [mapsConfigStatus, setMapsConfigStatus] = useState<
+      "loading" | "server" | "legacy" | "missing" | "error"
+    >("loading"),
     [versions, setVersions] = useState<Version[]>([]),
     [versionError, setVersionError] = useState(""),
     [message, setMessage] = useState(""),
@@ -150,12 +154,61 @@ export default function Editor() {
       .catch((e) => {
         if (active) setError(e.message);
       });
-    void Promise.resolve().then(() =>
-      setApiKey(localStorage.getItem("620-google-key") ?? ""),
-    );
+    const captureSetup = () => {
+      const setupToken = new URLSearchParams(location.hash.slice(1)).get(
+        "maps-setup",
+      );
+      if (!setupToken) return;
+      // Fragments are not sent to the server. Remove it immediately and keep
+      // it only in page memory. Handle a management link opened in this tab.
+      history.replaceState(null, "", location.pathname + location.search);
+      void Promise.resolve().then(() => {
+        if (active) {
+          setManagementToken(setupToken);
+          setPanel("settings");
+        }
+      });
+    };
+    captureSetup();
+    window.addEventListener("hashchange", captureSetup);
+    // Prefer the shared backend key. Read legacy local storage only as a
+    // migration fallback, after the server request has completed.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const legacyKey = () => {
+      try {
+        return localStorage.getItem("620-google-key")?.trim() ?? "";
+      } catch {
+        return "";
+      }
+    };
+    fetch("/api/maps-config", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw Error("地圖設定讀取失敗");
+        const config = (await response.json()) as { apiKey?: unknown };
+        if (!config || typeof config.apiKey !== "string")
+          throw Error("地圖設定格式錯誤");
+        if (!active) return;
+        const serverKey = config.apiKey.trim();
+        const previousKey = legacyKey();
+        setApiKey(serverKey || previousKey);
+        setMapsConfigStatus(
+          serverKey ? "server" : previousKey ? "legacy" : "missing",
+        );
+      })
+      .catch(() => {
+        if (!active) return;
+        const previousKey = legacyKey();
+        setApiKey(previousKey);
+        setMapsConfigStatus(previousKey ? "legacy" : "error");
+      })
+      .finally(() => clearTimeout(timeout));
     void Promise.resolve().then(loadVersions);
     return () => {
       active = false;
+      clearTimeout(timeout);
+      controller.abort();
+      window.removeEventListener("hashchange", captureSetup);
     };
   }, []);
   useEffect(() => {
@@ -801,8 +854,8 @@ export default function Editor() {
         close={closePanel}
         route={route}
         edit={edit}
-        apiKey={apiKey}
-        setApiKey={setApiKey}
+        mapsConfigStatus={mapsConfigStatus}
+        managementToken={managementToken}
         selected={selected}
         setSelected={setSelected}
         save={save}
