@@ -14,9 +14,11 @@ import {
 } from "../lib/route";
 import type * as Leaflet from "leaflet";
 import type { MapViewport } from "../lib/elevation";
+import type { MileageReference } from "../lib/mileage";
 export type Mode = "browse" | "edit" | "append" | "waypoint";
 type Props = {
   route: RouteData;
+  mileageReference: MileageReference;
   mode: Mode;
   apiKey: string;
   focus: Waypoint | null;
@@ -385,10 +387,10 @@ export default function RouteMap(props: Props) {
       }
     });
 
-    routeMilestones(s.route.points).forEach((p) => {
+    routeMilestones(s.mileageReference.points).forEach((p) => {
       const label = String(p.meters / 1000);
-      const title = `目前編輯路線：${label} 公里`;
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="32" viewBox="0 0 68 32"><path d="M34 23v6" stroke="${activeRouteColor}" stroke-width="2"/><circle cx="34" cy="29" r="2.5" fill="${activeRouteColor}" stroke="white"/><rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="${activeRouteColor}" stroke-width="2"/><text x="34" y="16" text-anchor="middle" fill="#153e55" font-family="Arial,sans-serif" font-size="12" font-weight="700">${label}</text></svg>`;
+      const title = `四極點620：${label} 公里`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="68" height="32" viewBox="0 0 68 32"><path d="M34 23v6" stroke="#1769c2" stroke-width="2"/><circle cx="34" cy="29" r="2.5" fill="#1769c2" stroke="white"/><rect x="1" y="1" width="66" height="22" rx="11" fill="white" stroke="#1769c2" stroke-width="2"/><text x="34" y="16" text-anchor="middle" fill="#153e55" font-family="Arial,sans-serif" font-size="12" font-weight="700">${label}</text></svg>`;
       if (adapter.current === "google") {
         layers.current.push(
           new window.google.maps.Marker({
@@ -479,7 +481,7 @@ export default function RouteMap(props: Props) {
       }
     });
     renderHandles();
-  }, [props.route, props.mode, ready]);
+  }, [props.route, props.mileageReference, props.mode, ready]);
   useEffect(() => {
     if (ready) fit();
   }, [props.fitSignal, ready]);

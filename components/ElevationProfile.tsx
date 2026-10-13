@@ -2,24 +2,25 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   buildElevationProfile,
-  elevationLayers,
   visibleMileageRange,
   mileageRangeTicks,
   type MapViewport,
 } from "../lib/elevation";
+import type { MileageReference } from "../lib/mileage";
 import { type RouteData } from "../lib/route";
 
 export default function ElevationProfile({
   route,
+  mileageReference,
   viewport,
 }: {
   route: RouteData;
+  mileageReference: MileageReference;
   viewport: MapViewport | null;
 }) {
-  const [referenceId, setReferenceId] = useState<string>();
   const profile = useMemo(
-    () => buildElevationProfile(route, referenceId),
-    [route, referenceId],
+    () => buildElevationProfile(route, undefined, mileageReference),
+    [route, mileageReference],
   );
 
   const range = useMemo(
@@ -49,8 +50,7 @@ export default function ElevationProfile({
     axis.start === axis.end ? Math.max(0, axis.start - 0.5) : axis.start;
   const axisEnd = axis.start === axis.end ? axis.end + 0.5 : axis.end;
 
-  const layers = elevationLayers(route),
-    width = Math.max(chartWidth, ticks.length * 54 + 70);
+  const width = Math.max(chartWidth, ticks.length * 54 + 70);
   const left = 54,
     right = width - 20,
     top = 22,
@@ -64,21 +64,7 @@ export default function ElevationProfile({
       (bottom - top);
   return (
     <div className="profile-content">
-      <label className="profile-reference">
-        位置對齊基準
-        <select
-          aria-label="高程對齊基準路線"
-          value={profile.reference.id}
-          onChange={(e) => setReferenceId(e.target.value)}
-        >
-          {layers.map((layer) => (
-            <option key={layer.id} value={layer.id}>
-              {layer.name}
-              {layer.id === "active" ? "（目前編輯）" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
+      <p className="profile-reference">里程基準：四極點620 起點（固定）</p>
       {range ? (
         <div
           ref={scrollHost}
@@ -138,7 +124,7 @@ export default function ElevationProfile({
               </g>
             ))}
             <text x={right} y="141" textAnchor="end" className="profile-unit">
-              基準里程 km
+              四極點620 里程 km
             </text>
             {profile.profiles.map((layer, layerIndex) => (
               <g

@@ -12,7 +12,6 @@ import {
   Trash2,
 } from "lucide-react";
 import {
-  cumulative,
   distance,
   groups,
   nearest,
@@ -22,12 +21,14 @@ import {
   type RouteData,
   type Waypoint,
 } from "../lib/route";
+import { projector, type MileageReference } from "../lib/mileage";
 export type Panel =
   null | "settings" | "save" | "export" | "source" | "point" | "simplify";
 type Props = {
   panel: Panel;
   close: () => void;
   route: RouteData;
+  mileageReference: MileageReference;
   edit: (r: RouteData) => void;
   managementToken: string;
   mapsConfigStatus: "loading" | "server" | "legacy" | "missing" | "error";
@@ -51,6 +52,7 @@ export default function Dialogs({
   panel,
   close,
   route,
+  mileageReference,
   edit,
   mapsConfigStatus,
   managementToken,
@@ -97,8 +99,11 @@ export default function Dialogs({
     };
   }, [panel, close]);
   if (!panel) return null;
-  const meters = distance(route.points),
-    ds = cumulative(route.points);
+  const meters = distance(route.points);
+  const selectedProjection = selected
+    ? projector(mileageReference.points, Infinity)(selected)
+    : null;
+  const selectedMileage = selectedProjection?.meters ?? null;
   const kinds = {
     checkpoint: "檢錄點",
     water: "補水",
@@ -325,8 +330,8 @@ export default function Dialogs({
             <div className="save-summary">
               <Cloud size={17} />
               <span>
-                {(meters / 1000).toFixed(2)} km · {route.waypoints.length}{" "}
-                個點位 · {storageName}保存
+                路線長度 {(meters / 1000).toFixed(2)} km ·{" "}
+                {route.waypoints.length} 個點位 · {storageName}保存
               </span>
             </div>
             <div className="modal-actions">
@@ -515,31 +520,33 @@ export default function Dialogs({
                 }
               />
             </label>
-            {selected.officialKm !== undefined && (
-              <div className="point-info">
+            <div className="point-info">
+              <span>
+                四極點620 起點里程{" "}
+                <b>
+                  {selectedMileage === null
+                    ? "無法定位基準里程"
+                    : (selectedMileage / 1000).toFixed(1) + " km"}
+                </b>
+              </span>
+              <span>
+                距離四極點620基準軌跡{" "}
+                <b>
+                  {selectedProjection
+                    ? Math.round(selectedProjection.error) + " m"
+                    : "—"}
+                </b>
+              </span>
+              <span>
+                距離目前編輯軌跡{" "}
+                <b>{Math.round(nearest(route.points, selected).meters)} m</b>
+              </span>
+              {selected.cutoff && (
                 <span>
-                  官方公告里程 <b>{selected.officialKm} km</b>
+                  關門時間（台灣）<b>{clock(selected.cutoff)}</b>
                 </span>
-                <span>
-                  目前路線最近位置{" "}
-                  <b>
-                    {(ds[nearest(route.points, selected).idx] / 1000).toFixed(
-                      1,
-                    )}{" "}
-                    km
-                  </b>
-                </span>
-                <span>
-                  距離軌跡{" "}
-                  <b>{Math.round(nearest(route.points, selected).meters)} m</b>
-                </span>
-                {selected.cutoff && (
-                  <span>
-                    關門時間（台灣）<b>{clock(selected.cutoff)}</b>
-                  </span>
-                )}
-              </div>
-            )}
+              )}
+            </div>
             {selected.accuracy && (
               <p className="hint">位置依據：{selected.accuracy}</p>
             )}

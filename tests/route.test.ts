@@ -933,3 +933,130 @@ test("Maps settings accept browser keys while rejecting script and whitespace in
   ])
     assert.equal(validBrowserMapsKey(key), false);
 });
+
+test("all displayed positions use the immutable TWB origin after shifted imports, overlay deletion and backup restore", async () => {
+  const { referenceWaypoints, mileageSpan } = await import("../lib/mileage");
+  const { cumulative } = await import("../lib/route");
+  const official = validateRoute(
+    JSON.parse(await readFile("public/data/twb-2026.json", "utf8")),
+  );
+  const ds = cumulative(official.points);
+  const reference = { name: official.name, points: official.points };
+  const waypoints = [
+    {
+      ...official.points[600],
+      id: "later",
+      name: "Later",
+      kind: "custom" as const,
+      note: "",
+    },
+    {
+      ...official.points[0],
+      id: "start",
+      name: "Start",
+      kind: "custom" as const,
+      note: "",
+    },
+    {
+      ...official.points[300],
+      id: "earlier",
+      name: "Earlier",
+      kind: "custom" as const,
+      note: "",
+    },
+    {
+      lat: 40,
+      lng: 140,
+      id: "far",
+      name: "Far",
+      kind: "custom" as const,
+      note: "",
+    },
+  ];
+  const shifted = {
+    name: "Shifted",
+    provenance: "test",
+    points: official.points.slice(300, 601),
+    waypoints,
+  };
+  const imported = addImportedRoute(builtInRoute(official, shifted), {
+    ...shifted,
+    name: "Imported",
+  });
+  const deleted = { ...imported, overlays: [] };
+  const restored = addImportedRoute(imported, shifted, true);
+  for (const route of [shifted, imported, deleted, restored]) {
+    const profile = buildElevationProfile(route, "active", reference);
+    assert.equal(profile.reference.name, official.name);
+    assert.equal(profile.reference.points, reference.points);
+    const active = profile.profiles.find((p) => p.id === "active")!;
+    assert.ok(Math.abs(active.paths[0][0].meters - ds[300]) < 1);
+    assert.ok(active.paths[0][0].meters > 0);
+    const allStations = referenceWaypoints(route, reference);
+    const stations = allStations.filter((p) =>
+      ["start", "earlier", "later"].includes(p.waypoint.id),
+    );
+    assert.deepEqual(
+      stations.map((p) => p.waypoint.id),
+      ["start", "earlier", "later"],
+    );
+    assert.equal(stations[0].meters, 0);
+    assert.ok(Math.abs(stations[1].meters! - ds[300]) < 1);
+    assert.ok(allStations.find((p) => p.waypoint.id === "far")!.offset! > 1000);
+    for (let i = 1; i < allStations.length; i++)
+      assert.ok(allStations[i].meters! >= allStations[i - 1].meters!);
+    const range = mileageSpan(route.points, reference)!;
+    assert.ok(Math.abs(range.start - ds[300]) < 1);
+    assert.ok(Math.abs(range.end - ds[600]) < 1);
+  }
+  assert.deepEqual(
+    waypoints.map((w) => w.id),
+    ["later", "start", "earlier", "far"],
+  );
+});
+
+test("reversed tracks, viewport and 50km map markers retain the fixed origin without modifying route length", async () => {
+  const { mileageSpan } = await import("../lib/mileage");
+  const { cumulative } = await import("../lib/route");
+  const reference = {
+    name: "TWB 2026 四極點620",
+    points: [
+      { lat: 23, lng: 120, ele: 5 },
+      { lat: 23, lng: 120.5, ele: 10 },
+      { lat: 23, lng: 121, ele: 20 },
+      { lat: 23, lng: 121.5, ele: 30 },
+    ],
+  };
+  const route = {
+    name: "Reverse",
+    provenance: "test",
+    points: [...reference.points.slice(1)].reverse(),
+    waypoints: [],
+  };
+  const original = JSON.stringify(route);
+  const ds = cumulative(reference.points);
+  const profile = buildElevationProfile(route, undefined, reference);
+  const active = profile.profiles[0];
+  assert.ok(Math.abs(active.paths[0][0].meters - ds[3]) < 1);
+  assert.ok(Math.abs(active.paths[0].at(-1)!.meters - ds[1]) < 1);
+  const range = visibleMileageRange(profile, {
+    south: 22.99,
+    north: 23.01,
+    west: 120.49,
+    east: 121.01,
+  })!;
+  assert.ok(range.start > 45000 && range.end > 100000);
+  const span = mileageSpan(route.points, reference)!;
+  assert.ok(Math.abs(span.start - ds[1]) < 1);
+  const labels = routeMilestones(reference.points);
+  assert.deepEqual(
+    labels.map((p) => p.meters),
+    [50000, 100000, 150000],
+  );
+  assert.ok(
+    labels[0].lng > reference.points[0].lng &&
+      labels[0].lng < reference.points[1].lng,
+  );
+  assert.equal(JSON.stringify(route), original);
+  assert.ok(distance(route.points) < distance(reference.points));
+});

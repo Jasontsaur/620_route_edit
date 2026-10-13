@@ -30,7 +30,6 @@ import Dialogs, { type Panel } from "./Dialogs";
 import {
   builtInRoute,
   addImportedRoute,
-  orderedWaypoints,
   activeRouteColor,
   overlayColor,
   distance,
@@ -73,6 +72,12 @@ const modeHelp = {
   append: "點擊地圖，依序延伸路線末端。新路段以直線連接。",
   waypoint: "點擊地圖新增點位，或拖曳既有點位調整位置",
 };
+import {
+  referenceWaypoints,
+  mileageSpan,
+  type MileageReference,
+} from "../lib/mileage";
+
 export default function Editor() {
   const storageName =
     typeof window !== "undefined" &&
@@ -80,6 +85,9 @@ export default function Editor() {
       ? "本機"
       : "雲端";
   const [route, setRoute] = useState<RouteData | null>(null),
+    [mileageReference, setMileageReference] = useState<MileageReference | null>(
+      null,
+    ),
     [mode, setMode] = useState<Mode>("browse"),
     [tab, setTab] = useState<"points" | "versions">("points"),
     [panel, setPanel] = useState<Panel>(null),
@@ -149,7 +157,14 @@ export default function Editor() {
       }),
     )
       .then(([official, ride]) => {
-        if (active) setRoute(builtInRoute(official, ride));
+        if (active) {
+          const reference = validateRoute(official);
+          setMileageReference({
+            name: reference.name,
+            points: reference.points,
+          });
+          setRoute(builtInRoute(official, ride));
+        }
       })
       .catch((e) => {
         if (active) setError(e.message);
@@ -364,7 +379,7 @@ export default function Editor() {
     }
   }
   async function exportAs(format: "fit" | "tcx" | "gpx" | "json") {
-    if (!route) return;
+    if (!route || !mileageReference) return;
     setBusy(true);
     try {
       const name = route.name.replace(/[<>:"/\\|?*]/g, "-");
@@ -391,12 +406,22 @@ export default function Editor() {
       setBusy(false);
     }
   }
+  const mileageRange = useMemo(
+    () =>
+      route && mileageReference
+        ? mileageSpan(route.points, mileageReference)
+        : null,
+    [route, mileageReference],
+  );
   const meters = route ? distance(route.points) : 0;
   const stations = useMemo(
-    () => (route ? orderedWaypoints(route) : []),
-    [route],
+    () =>
+      route && mileageReference
+        ? referenceWaypoints(route, mileageReference)
+        : [],
+    [route, mileageReference],
   );
-  if (!route)
+  if (!route || !mileageReference)
     return (
       <main className="loading">
         <Route size={38} />
@@ -485,6 +510,15 @@ export default function Editor() {
                 <Flag size={13} />
               </span>
             </div>
+            <p className="hint">
+              四極點620 里程：
+              {mileageRange
+                ? (mileageRange.start / 1000).toFixed(1) +
+                  "–" +
+                  (mileageRange.end / 1000).toFixed(1) +
+                  " km"
+                : "沒有可對齊路段"}
+            </p>
             <div className="route-metrics">
               <div>
                 <b>
@@ -546,46 +580,50 @@ export default function Editor() {
                   </button>
                 </div>
                 <div className="stations">
-                  {stations.map(({ waypoint: w, meters: waypointMeters }) => {
-                    return (
-                      <button
-                        className="station-row"
-                        key={w.id}
-                        onClick={() => select(w)}
-                      >
-                        <span
-                          className={
-                            "station-number " +
-                            (w.kind !== "checkpoint" ? "warm" : "")
-                          }
+                  {stations.map(
+                    ({ waypoint: w, meters: waypointMeters, offset }) => {
+                      return (
+                        <button
+                          className="station-row"
+                          key={w.id}
+                          onClick={() => select(w)}
                         >
-                          {w.id === "start" ? (
-                            <Flag size={14} />
-                          ) : w.id === "finish" ? (
-                            <Check size={15} />
-                          ) : w.id.startsWith("cp") ? (
-                            w.id.slice(2)
-                          ) : (
-                            <MapPin size={14} />
-                          )}
-                        </span>
-                        <span className="station-content">
-                          <strong>{w.name}</strong>
-                          <span>
-                            {`軌跡 ${(waypointMeters / 1000).toFixed(1)} km`}
-                            {w.officialKm !== undefined
-                              ? ` · 公告 ${w.officialKm} km`
-                              : ""}
-                            {w.cutoff
-                              ? " · " + clock(w.cutoff)
-                              : " · " + kinds[w.kind]}
+                          <span
+                            className={
+                              "station-number " +
+                              (w.kind !== "checkpoint" ? "warm" : "")
+                            }
+                          >
+                            {w.id === "start" ? (
+                              <Flag size={14} />
+                            ) : w.id === "finish" ? (
+                              <Check size={15} />
+                            ) : w.id.startsWith("cp") ? (
+                              w.id.slice(2)
+                            ) : (
+                              <MapPin size={14} />
+                            )}
                           </span>
-                          <small>{w.accuracy ?? w.note ?? "自訂點位"}</small>
-                        </span>
-                        <ChevronRight size={14} />
-                      </button>
-                    );
-                  })}
+                          <span className="station-content">
+                            <strong>{w.name}</strong>
+                            <span>
+                              {waypointMeters === null
+                                ? "無法定位基準里程"
+                                : `四極點620 ${(waypointMeters / 1000).toFixed(1)} km`}
+                              {offset !== null && offset > 1000
+                                ? ` · 距基準 ${(offset / 1000).toFixed(1)} km`
+                                : ""}
+                              {w.cutoff
+                                ? " · " + clock(w.cutoff)
+                                : " · " + kinds[w.kind]}
+                            </span>
+                            <small>{w.accuracy ?? w.note ?? "自訂點位"}</small>
+                          </span>
+                          <ChevronRight size={14} />
+                        </button>
+                      );
+                    },
+                  )}
                 </div>
                 <p className="sidebar-note">
                   點選站點查看位置與關門時間。檢錄感應門位置以大會最終公告為準。
@@ -604,7 +642,9 @@ export default function Editor() {
                   <div className="empty">
                     <History size={28} />
                     <h3>保留每一次路線調整</h3>
-                    <p>儲存第一個版本後，可在這裡載入、比較里程與建立分支。</p>
+                    <p>
+                      儲存第一個版本後，可在這裡載入、比較路線長度與建立分支。
+                    </p>
                     <button onClick={() => setPanel("save")}>
                       儲存第一個版本
                     </button>
@@ -616,7 +656,8 @@ export default function Editor() {
                       <strong>{v.name}</strong>
                       <p>{v.note || "未填寫備註"}</p>
                       <span>
-                        {(v.distance / 1000).toFixed(1)} km · {v.id.slice(0, 8)}
+                        長度 {(v.distance / 1000).toFixed(1)} km ·{" "}
+                        {v.id.slice(0, 8)}
                       </span>
                       {v.parent && (
                         <small>來源版本 {v.parent.slice(0, 8)}</small>
@@ -649,6 +690,7 @@ export default function Editor() {
         <div className="canvas" data-mode={mode}>
           <RouteMap
             route={route}
+            mileageReference={mileageReference}
             mode={mode}
             apiKey={apiKey}
             focus={focus}
@@ -736,7 +778,9 @@ export default function Editor() {
                 <i style={{ borderColor: activeRouteColor }} />
                 <span>
                   <b>{route.name}</b>
-                  <small>目前編輯 · {(meters / 1000).toFixed(1)} km</small>
+                  <small>
+                    目前編輯 · 路線長度 {(meters / 1000).toFixed(1)} km
+                  </small>
                 </span>
               </div>
               {(route.overlays ?? []).map((layer, i) => (
@@ -748,7 +792,8 @@ export default function Editor() {
                   <span>
                     <b>{layer.name}</b>
                     <small>
-                      參考路線 · {(distance(layer.points) / 1000).toFixed(1)} km
+                      參考路線 · 路線長度{" "}
+                      {(distance(layer.points) / 1000).toFixed(1)} km
                     </small>
                   </span>
                   <button
@@ -768,7 +813,7 @@ export default function Editor() {
                   </button>
                 </div>
               ))}
-              <p>編輯、里程與 Garmin 匯出以橘色路線為準</p>
+              <p>位置里程以四極點620起點為準；Garmin 匯出使用目前編輯路線</p>
               {!apiKey && <p>設定 Google Maps 金鑰即可切換底圖</p>}
             </div>
           </section>
@@ -806,7 +851,11 @@ export default function Editor() {
                   {groups(route.points).length} 段
                 </span>
               </div>
-              <ElevationProfile route={route} viewport={viewport} />
+              <ElevationProfile
+                route={route}
+                mileageReference={mileageReference}
+                viewport={viewport}
+              />
             </div>
           </div>
         </div>
@@ -837,7 +886,7 @@ export default function Editor() {
           >
             <X size={16} />
           </button>
-          <span>與 {clock(compare.created)} 版本比較</span>
+          <span>與 {clock(compare.created)} 版本比較長度</span>
           <strong>
             {meters >= compare.distance ? "+" : ""}
             {((meters - compare.distance) / 1000).toFixed(2)} km
@@ -853,6 +902,7 @@ export default function Editor() {
         panel={panel}
         close={closePanel}
         route={route}
+        mileageReference={mileageReference}
         edit={edit}
         mapsConfigStatus={mapsConfigStatus}
         managementToken={managementToken}
