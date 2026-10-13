@@ -62,6 +62,7 @@ export default function RouteMap(props: Props) {
     lastViewport = useRef<MapViewport | null>(null),
     handles = useRef<any[]>([]),
     [ready, setReady] = useState(0),
+    [mapType, setMapType] = useState<"roadmap" | "satellite">("roadmap"),
     [provider, setProvider] = useState("載入地圖中…");
   useEffect(() => {
     state.current = props;
@@ -222,7 +223,8 @@ export default function RouteMap(props: Props) {
           map.current = new window.google.maps.Map(el, {
             center: { lat: 23.7, lng: 120.9 },
             zoom: 7,
-            mapTypeControl: true,
+            mapTypeId: mapType,
+            mapTypeControl: false,
             streetViewControl: false,
             fullscreenControl: false,
             clickableIcons: false,
@@ -487,13 +489,37 @@ export default function RouteMap(props: Props) {
       map.current.setZoom(15);
     } else map.current.setView([p.lat, p.lng], 15);
   }, [props.focus, ready]);
+  useEffect(() => {
+    if (ready && map.current && adapter.current === "google") {
+      map.current.setMapTypeId(mapType);
+    }
+  }, [mapType, ready]);
   return (
-    <div className="map-wrap">
+    <div
+      className="map-wrap"
+      data-provider={provider === "Google Maps" ? "google" : "osm"}
+    >
       <div
         ref={host}
         className={"map mode-" + props.mode}
         aria-label="路線互動地圖"
       />
+      {provider === "Google Maps" && (
+        <label className="map-type-control">
+          <select
+            aria-label="Google Maps 顯示模式"
+            value={mapType}
+            onChange={(e) =>
+              setMapType(
+                e.target.value === "satellite" ? "satellite" : "roadmap",
+              )
+            }
+          >
+            <option value="roadmap">地圖</option>
+            <option value="satellite">衛星</option>
+          </select>
+        </label>
+      )}
       <span className="provider">{provider}</span>
     </div>
   );

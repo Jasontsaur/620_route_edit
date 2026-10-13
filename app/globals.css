@@ -1394,3 +1394,41 @@ code {
     border-top: 1px solid var(--line);
   }
 }
+
+.map-type-control {
+  position: absolute;
+  top: 84px;
+  right: 22px;
+  z-index: 5;
+  background: white;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 3px 20px #173f551a;
+}
+.map-type-control select {
+  min-width: 108px;
+  min-height: 40px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--ink);
+  background: white;
+}
+.canvas:has(.map-wrap[data-provider="google"]) .map-help {
+  max-width: calc(100% - 190px);
+}
+@media (max-width: 680px), (max-width: 950px) and (pointer: coarse) {
+  .map-type-control {
+    top: 68px;
+    right: 8px;
+  }
+  .map-type-control select {
+    min-width: 104px;
+    min-height: 40px;
+  }
+  .canvas:has(.map-wrap[data-provider="google"]) .map-help {
+    max-width: calc(100% - 136px);
+  }
+}

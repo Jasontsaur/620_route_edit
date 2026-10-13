@@ -26,7 +26,7 @@ TWB 2026 四極點620 的繁體中文路線編輯器。可編輯路線、管理�
 
 ## Google Maps
 
-使用右上角「地圖設定」輸入啟用 **Maps JavaScript API** 的 Google Cloud 瀏覽器金鑰；依 Google 要求設定專案計費和網站 HTTP referrer 限制。設定面板顯示目前網站應允許的來源。
+使用右上角「地圖設定」輸入啟用 **Maps JavaScript API** 的 Google Cloud 瀏覽器金鑰；依 Google 要求設定專案計費和網站 HTTP referrer 限制。設定面板顯示目前網站應允許的來源。Google Maps 載入成功後，地圖右上方「全線」下方會出現「地圖／衛星」選單，可直接切換底圖，路線、點位與高程圖保留。備用 OpenStreetMap 底圖不顯示此選單。
 
 金鑰只存於本機瀏覽器的 localStorage，不上傳至版本資料庫或 GitHub。瀏覽器金鑰本來就會送往 Google，務必設網站與 API 限制。尚無金鑰時使用標示清楚的 OpenStreetMap 備用底圖。清除或變更已載入的 Google 金鑰會重新整理頁面，請先儲存版本。
 
