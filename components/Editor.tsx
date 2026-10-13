@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import RouteMap, { type Mode } from "./RouteMap";
 import ElevationProfile from "./ElevationProfile";
+import { importRouteFile } from "../lib/import-client";
+import type { ImportSummary } from "../lib/compact-import";
 import type { MapViewport } from "../lib/elevation";
 import Dialogs, { type Panel } from "./Dialogs";
 import {
@@ -39,13 +41,7 @@ import {
   type Waypoint,
   type TrackPoint,
 } from "../lib/route";
-import {
-  download,
-  exportFit,
-  exportGpx,
-  exportTcx,
-  importFile,
-} from "../lib/files";
+import { download, exportFit, exportGpx, exportTcx } from "../lib/files";
 type Version = {
   id: string;
   name: string;
@@ -231,7 +227,11 @@ export default function Editor() {
     setBusy(true);
     setError("");
     try {
-      const next = await importFile(f);
+      let summary: ImportSummary | undefined;
+      const next = await importRouteFile(f, (p) => {
+        setMessage(p.message);
+        if (p.summary) summary = p.summary;
+      });
       const restoreBackup = f.name.toLowerCase().endsWith(".json");
       if (
         restoreBackup &&
@@ -245,9 +245,10 @@ export default function Editor() {
       setMode("browse");
       setFit((v) => v + 1);
       setMessage(
-        `已匯入 ${f.name}：${next.points.length.toLocaleString()} 個軌跡點。${restoreBackup ? "已還原備份的路線圖層。" : "原路線已保留為參考圖層；橘色為目前編輯路線。"}`,
+        `已匯入 ${f.name}：${summary ? `自動瘦身 ${summary.before.toLocaleString()} → ${summary.after.toLocaleString()} 個軌跡點。` : `${next.points.length.toLocaleString()} 個軌跡點。`}${restoreBackup ? "已還原備份的路線圖層。" : "原路線已保留為參考圖層；橘色為目前編輯路線。"}`,
       );
     } catch (e) {
+      setMessage("");
       setError(e instanceof Error ? e.message : "匯入失敗");
     } finally {
       setBusy(false);

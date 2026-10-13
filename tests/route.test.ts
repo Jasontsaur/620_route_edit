@@ -22,6 +22,11 @@ import {
   mileageRangeTicks,
 } from "../lib/elevation";
 import { versionOwner } from "../lib/version-owner";
+import {
+  thinTrack,
+  compactImportedRoute,
+  type ImportSummary,
+} from "../lib/compact-import";
 Object.assign(globalThis, { DOMParser });
 
 test("anonymous version storage creates independent browser identities without login", () => {
@@ -618,4 +623,181 @@ test("official baseline is valid, has 8 checkpoints and honest measured length",
   const { checkpointSeed } = await import("../lib/route");
   assert.equal(checkpointSeed.length, 8);
   assert.equal(checkpointSeed.at(-1)!.officialKm, 615);
+});
+
+test("automatic thinning retains corners, hill extrema, endpoints and GPS/elevation gaps", () => {
+  const points = Array.from({ length: 15001 }, (_, i) => ({
+    lat: 25 + (i > 7500 ? (i - 7500) * 0.000001 : 0),
+    lng: 121 + Math.min(i, 7500) * 0.000001,
+    ele: i === 3000 ? 80 : i === 9000 ? -20 : 0,
+    segment: i >= 12000 ? 1 : 0,
+  }));
+  points[6000].ele = undefined as unknown as number;
+  const before = structuredClone(points);
+  const kept = thinTrack(points, 2, 1);
+  for (const i of [0, 3000, 5999, 6000, 6001, 7500, 9000, 11999, 12000, 15000])
+    assert.ok(kept.includes(points[i]), "lost required index " + i);
+  assert.equal(groups(kept).length, 2);
+  assert.ok(kept.length < 1000);
+  assert.deepEqual(points, before);
+});
+test("large track imports compact before validation and never hide invalid raw coordinates", () => {
+  const points = Array.from({ length: 60001 }, (_, i) => ({
+    lat: 25,
+    lng: 121 + i * 0.000001,
+    ele: 10,
+  }));
+  let summary: ImportSummary | undefined;
+  const input = {
+    name: "large",
+    provenance: "test",
+    waypoints: [],
+    points,
+    overlays: [{ id: "ref", name: "ref", points }],
+  };
+  const output = compactImportedRoute(input, (p) => {
+    if (p.summary) summary = p.summary;
+  });
+  assert.ok(output.points.length < 12000);
+  assert.ok(output.overlays![0].points.length < 12000);
+  assert.equal(summary!.before, 120002);
+  assert.equal(
+    summary!.after,
+    output.points.length + output.overlays![0].points.length,
+  );
+  assert.ok(Math.abs(summary!.beforeMeters - summary!.afterMeters) < 1);
+  assert.equal(input.points.length, 60001);
+  const bad = [...points];
+  bad[12345] = { lat: 91, lng: 121, ele: 10 };
+  assert.throws(
+    () => compactImportedRoute({ ...input, points: bad }),
+    /無效座標/,
+  );
+});
+test("large GPX and TCX files auto-thin without deleting waypoints or joining tracks", async () => {
+  const points = Array.from({ length: 51001 }, (_, i) => ({
+    lat: 25,
+    lng: 121 + i * 0.000001,
+    ele: 10,
+    segment: i > 25000 ? 1 : 0,
+  }));
+  const input = { ...route, points };
+  for (const [name, data] of [
+    ["large.gpx", exportGpx(input)],
+    ["large.tcx", exportTcx(input)],
+  ]) {
+    let summary: ImportSummary | undefined;
+    const output = await importFile(file(data, name), (p) => {
+      if (p.summary) summary = p.summary;
+    });
+    assert.ok(output.points.length <= 12000);
+    assert.equal(output.waypoints.length, 1);
+    assert.equal(output.waypoints[0].name, route.waypoints[0].name);
+    assert.equal(groups(output.points).length, 2);
+    assert.equal(summary!.before, 51001);
+  }
+});
+test("large JSON backups thin each layer while small backup imports are unchanged", async () => {
+  const points = Array.from({ length: 51001 }, (_, i) => ({
+    lat: 25,
+    lng: 121 + i * 0.000001,
+  }));
+  const output = await importFile(
+    file(
+      JSON.stringify({
+        ...route,
+        points,
+        overlays: [{ id: "ref", name: "ref", points }],
+      }),
+      "large.json",
+    ),
+  );
+  assert.ok(output.points.length <= 12000);
+  assert.ok(output.overlays![0].points.length <= 12000);
+  assert.deepEqual(
+    await importFile(file(JSON.stringify(route), "small.json")),
+    route,
+  );
+});
+test("XML extension data is ignored; large byte limits remain explicit", async () => {
+  const data = exportGpx(route).replace(
+    "</trkpt>",
+    "<extensions><heartrate>99</heartrate></extensions></trkpt>",
+  );
+  checkGeometry(await importFile(file(data, "extensions.gpx")));
+  const oversize = { size: 100000001, name: "too-large.gpx" } as File;
+  await assert.rejects(importFile(oversize), /100MB/);
+});
+
+test("large FIT activity imports auto-thin while preserving an interrupted GPS segment", async () => {
+  const encoder = new Encoder();
+  const write = (n: number, m: Record<string, unknown>) =>
+    encoder.onMesg(n, m as import("@garmin/fitsdk").Mesg);
+  write(Profile.MesgNum.FILE_ID, {
+    type: "activity",
+    manufacturer: "development",
+  });
+  const semi = (n: number) => Math.round((n * 2 ** 31) / 180);
+  for (let i = 0; i < 51001; i++)
+    write(
+      Profile.MesgNum.RECORD,
+      i === 25000
+        ? { heartRate: 80 }
+        : {
+            positionLat: semi(25),
+            positionLong: semi(121 + i * 0.000001),
+            altitude: 10,
+            heartRate: 80,
+            power: 100,
+          },
+    );
+  let summary: ImportSummary | undefined;
+  const output = await importFile(file(encoder.close(), "large.fit"), (p) => {
+    if (p.summary) summary = p.summary;
+  });
+  assert.equal(summary!.before, 51000);
+  assert.ok(output.points.length <= 12000);
+  assert.equal(groups(output.points).length, 2);
+  assert.ok(
+    Math.abs(
+      distance(output.points) -
+        distance(
+          Array.from({ length: 51001 }, (_, i) => ({
+            lat: 25,
+            lng: 121 + i * 0.000001,
+          })),
+        ),
+    ) < 2,
+  );
+});
+
+test("streamed XML validates namespaces and well-formedness across byte chunks", async () => {
+  const prefixed = exportGpx(route)
+    .replace("<gpx ", '<gpx xmlns:p="http://www.topografix.com/GPX/1/1" ')
+    .replace(/<(\/?)(trk|trkseg|trkpt|ele)(?=[\s>])/g, "<$1p:$2");
+  checkGeometry(await importFile(file(prefixed, "namespace.gpx")));
+  await assert.rejects(
+    importFile(
+      file(
+        '<gpx><trk><trkseg><trkpt lat="25" lon="121"></trkseg></gpx>',
+        "bad.gpx",
+      ),
+    ),
+    /XML/,
+  );
+  await assert.rejects(
+    importFile(
+      file(
+        exportGpx({
+          ...route,
+          waypoints: Array.from({ length: 501 }, (_, i) => ({
+            ...route.waypoints[0],
+            id: String(i),
+          })),
+        }),
+        "points.gpx",
+      ),
+    ),
+    /500/,
+  );
 });

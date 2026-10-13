@@ -70,6 +70,6 @@ npm run build
 
 React 19、Vinext／Vite、Leaflet、Google Maps JavaScript API、Garmin FIT SDK、Cloudflare D1／Drizzle。`lib/route.ts` 管理幾何與點位，`lib/files.ts` 處理 Garmin 檔案，`app/api/versions/route.ts` 管理免登入的雲端版本；`lib/version-owner.ts` 管理匿名儲存識別碼。
 
-每次匯入上限 30MB、50,000 軌跡點、500 點位；雲端單版 JSON 上限 1.8MB。大量軌跡先用「簡化軌跡」；保留未簡化 GPX 或 JSON 做外部備份。金鑰、資料庫、個人路線版本與開發快取不會提交 GitHub，GitHub 同步的是程式和公開基準資料。
+每次匯入上限 100MB、原始單條最多 100 萬軌跡點、500 點位；原始點數超過 12,000 點會自動瘦身後再驗證及匯入，逐步採用 2–50m 位置／1–10m 高度容差，目標 12,000 點，瘦身後仍不得超過 50,000 點。保留各 GPS 分段端點、轉彎、主要高程變化、缺失高度邊界，並每 500m 保留定位錨點；無法保留必要斷點而縮至上限時，會提示分段匯入。GPX／TCX／FIT 與 JSON 備份（含參考圖層）皆適用，點位不會自動刪除。支援 Web Worker 的瀏覽器在背景解析及簡化，並顯示處理階段及前後點數；GPX／TCX 以串流 XML 解析，不建立整棵 DOM，也不保留心率等感測擴充資料，以降低記憶體用量。原始檔案不會改寫。簡化後量測里程可能減少，原檔請保留供比對。雲端單版 JSON 上限仍為 1.8MB，多次匯入的參考圖層過多時可移除不需要的圖層。金鑰、資料庫、個人路線版本與開發快取不會提交 GitHub，GitHub 同步的是程式和公開基準資料。
 
 GitHub Actions 執行應用 lint、TypeScript、檔案測試與正式建置。Sites 部署使用 `.openai/hosting.json` 的既有站台與 D1 綁定；migration 位於 `drizzle/`，不應以空白資料表覆蓋生產資料。

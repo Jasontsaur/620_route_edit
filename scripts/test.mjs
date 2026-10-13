@@ -5,6 +5,8 @@ import { spawnSync } from "node:child_process";
 for (const source of [
   "lib/route.ts",
   "lib/files.ts",
+  "lib/xml-track.ts",
+  "lib/compact-import.ts",
   "lib/elevation.ts",
   "lib/version-owner.ts",
   "tests/route.test.ts",
@@ -17,7 +19,7 @@ for (const source of [
       },
     })
     .outputText.replace(
-      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|version-owner))\1/g,
+      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|version-owner|compact-import|xml-track))\1/g,
       "$1$2.mjs$1",
     );
   const target = ".sites-runtime/test/" + source.replace(/\.ts$/, ".mjs");

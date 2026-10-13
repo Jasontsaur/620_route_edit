@@ -3,12 +3,12 @@ import {
   distance,
   groups,
   nearest,
-  validPoint,
-  validateRoute,
   type RouteData,
   type TrackPoint,
   type Waypoint,
 } from "./route";
+import { compactImportedRoute, type ImportProgress } from "./compact-import";
+import { readXmlTrack } from "./xml-track";
 const xml = (s: unknown) =>
   String(s ?? "").replace(
     /[<>&"']/g,
@@ -21,19 +21,19 @@ const xml = (s: unknown) =>
         "'": "&apos;",
       })[c]!,
   );
-const text = (e: Element, n: string) =>
-  e.getElementsByTagNameNS("*", n)[0]?.textContent ?? "";
-const elements = (e: Document | Element, n: string) =>
-  Array.from(e.getElementsByTagNameNS("*", n));
-const num = (s: string) => (s.trim() ? Number(s) : NaN);
-export async function importFile(file: File): Promise<RouteData> {
-  if (file.size > 30000000) throw Error("檔案超過 30MB，請先拆分。");
+export async function importFile(
+  file: File,
+  progress?: (p: ImportProgress) => void,
+): Promise<RouteData> {
+  if (file.size > 100000000)
+    throw Error("檔案超過 100MB，請分段匯入，避免耗盡手機記憶體。");
+  progress?.({ message: "正在讀取檔案…" });
   const ext = file.name.split(".").at(-1)?.toLowerCase();
   let points: TrackPoint[] = [],
     waypoints: Waypoint[] = [];
   let name = file.name.replace(/\.[^.]+$/, "");
   if (ext === "json") {
-    return validateRoute(JSON.parse(await file.text()));
+    return compactImportedRoute(JSON.parse(await file.text()), progress);
   }
   if (ext === "fit") {
     const { Decoder, Stream } = await import("@garmin/fitsdk");
@@ -42,7 +42,11 @@ export async function importFile(file: File): Promise<RouteData> {
     );
     if (!decoder.isFIT() || !decoder.checkIntegrity())
       throw Error("FIT 檔案損毀或 CRC 檢查未通過。");
-    const { messages, errors } = decoder.read();
+    progress?.({ message: "正在解析 Garmin 紀錄…" });
+    const { messages, errors } = decoder.read({
+      mergeHeartRates: false,
+      convertDateTimesToDates: false,
+    });
     if (errors.length) throw Error("FIT 解碼失敗。");
     const rec = messages.recordMesgs ?? [];
     let segment = 0,
@@ -82,88 +86,20 @@ export async function importFile(file: File): Promise<RouteData> {
       }));
     name = String(messages.courseMesgs?.[0]?.name ?? name);
   } else if (ext === "gpx" || ext === "tcx") {
-    const doc = new DOMParser().parseFromString(
-      await file.text(),
-      "application/xml",
-    );
-    if (elements(doc, "parsererror").length) throw Error("XML 格式不正確。");
-    if (ext === "gpx") {
-      let segs = elements(doc, "trkseg");
-      if (!segs.length) segs = elements(doc, "rte");
-      for (let s = 0; s < segs.length; s++) {
-        const rows = elements(
-          segs[s],
-          segs[s].localName === "rte" ? "rtept" : "trkpt",
-        );
-        for (const e of rows) {
-          const p: TrackPoint = {
-            lat: num(e.getAttribute("lat") ?? ""),
-            lng: num(e.getAttribute("lon") ?? ""),
-            segment: s,
-          };
-          const ele = num(text(e, "ele"));
-          if (Number.isFinite(ele)) p.ele = ele;
-          if (!validPoint(p)) throw Error("GPX 含無效座標。");
-          points.push(p);
-        }
-      }
-      waypoints = elements(doc, "wpt").map((e) => ({
-        id: crypto.randomUUID(),
-        name: text(e, "name") || "匯入點位",
-        note: text(e, "desc"),
-        kind: "custom" as const,
-        lat: num(e.getAttribute("lat") ?? ""),
-        lng: num(e.getAttribute("lon") ?? ""),
-      }));
-      name =
-        text(
-          elements(doc, "trk")[0] ??
-            elements(doc, "rte")[0] ??
-            doc.documentElement,
-          "name",
-        ) || name;
-    } else {
-      const courses = elements(doc, "Course");
-      if (courses.length > 1)
-        throw Error("TCX 含多條 Course，請分別匯入單條路線。");
-      const tracks = elements(doc, "Track");
-      tracks.forEach((track, s) =>
-        elements(track, "Trackpoint").forEach((e) => {
-          const lat = num(text(e, "LatitudeDegrees")),
-            lng = num(text(e, "LongitudeDegrees"));
-          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-          const ele = num(text(e, "AltitudeMeters"));
-          const p = {
-            lat,
-            lng,
-            segment: s,
-            ...(Number.isFinite(ele) ? { ele } : {}),
-          };
-          if (!validPoint(p)) throw Error("TCX 含無效座標。");
-          points.push(p);
-        }),
-      );
-      waypoints = elements(doc, "CoursePoint")
-        .filter(
-          (e) => text(e, "LatitudeDegrees") && text(e, "LongitudeDegrees"),
-        )
-        .map((e) => ({
-          id: crypto.randomUUID(),
-          name: text(e, "Name") || "Garmin 點位",
-          note: text(e, "Notes"),
-          kind: "custom" as const,
-          lat: num(text(e, "LatitudeDegrees")),
-          lng: num(text(e, "LongitudeDegrees")),
-        }));
-      name = text(courses[0] ?? doc.documentElement, "Name") || name;
-    }
+    const parsed = await readXmlTrack(file, ext, progress);
+    points = parsed.points;
+    waypoints = parsed.waypoints;
+    name = parsed.name || name;
   } else throw Error("請選擇 GPX、TCX、FIT 或路線 JSON 備份。");
-  return validateRoute({
-    name,
-    points,
-    waypoints,
-    provenance: `使用者匯入 ${file.name}；軌跡幾何，不含原始騎乘感測紀錄`,
-  });
+  return compactImportedRoute(
+    {
+      name,
+      points,
+      waypoints,
+      provenance: `使用者匯入 ${file.name}；軌跡幾何，不含原始騎乘感測紀錄`,
+    },
+    progress,
+  );
 }
 export function exportGpx(r: RouteData) {
   return `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="620 Route Studio" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>${xml(r.name)}</name><desc>${xml(r.provenance)}</desc></metadata>${r.waypoints.map((w) => `<wpt lat="${w.lat}" lon="${w.lng}"><name>${xml(w.name)}</name><desc>${xml(w.note)}</desc><type>${xml(w.kind)}</type></wpt>`).join("")}<trk><name>${xml(r.name)}</name>${groups(

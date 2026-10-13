@@ -14,7 +14,7 @@
     "db:generate": "drizzle-kit generate",
     "test": "node scripts/test.mjs",
     "typecheck": "tsc --noEmit",
-    "lint:app": "eslint app/api/versions/route.ts app/page.tsx app/layout.tsx components/Editor.tsx components/Dialogs.tsx components/RouteMap.tsx components/ElevationProfile.tsx lib/route.ts lib/files.ts lib/elevation.ts lib/version-owner.ts db/index.ts db/schema.ts tests/route.test.ts scripts/test.mjs"
+    "lint:app": "eslint app/api/versions/route.ts app/page.tsx app/layout.tsx components/Editor.tsx components/Dialogs.tsx components/RouteMap.tsx components/ElevationProfile.tsx lib/route.ts lib/files.ts lib/xml-track.ts lib/compact-import.ts lib/import-client.ts lib/route-import.worker.ts lib/elevation.ts lib/version-owner.ts db/index.ts db/schema.ts tests/route.test.ts scripts/test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -39,6 +39,7 @@
     "react-hook-form": "^7.85.0",
     "react-resizable-panels": "^4.12.2",
     "recharts": "^3.8.0",
+    "saxes": "6.0.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
