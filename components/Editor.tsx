@@ -94,9 +94,10 @@ export default function Editor() {
     [selected, setSelected] = useState<Waypoint | null>(null),
     [focus, setFocus] = useState<Waypoint | null>(null),
     [fit, setFit] = useState(0),
-    [mobilePanel, setMobilePanel] = useState<"legend" | "elevation" | null>(
-      null,
-    ),
+    [panelExpanded, setPanelExpanded] = useState({
+      legend: false,
+      elevation: false,
+    }),
     [viewport, setViewport] = useState<MapViewport | null>(null),
     [apiKey, setApiKey] = useState(""),
     [managementToken, setManagementToken] = useState(""),
@@ -758,21 +759,27 @@ export default function Editor() {
           <section
             className="route-legend"
             aria-label="路線圖例"
-            data-expanded={mobilePanel === "legend"}
+            data-expanded={panelExpanded.legend}
           >
             <button
-              className="mobile-panel-toggle"
-              aria-expanded={mobilePanel === "legend"}
+              className="map-panel-toggle"
+              aria-expanded={panelExpanded.legend}
               aria-controls="route-legend-content"
+              aria-label={
+                panelExpanded.legend ? "收合路線圖例" : "展開路線圖例"
+              }
               onClick={() =>
-                setMobilePanel((p) => (p === "legend" ? null : "legend"))
+                setPanelExpanded((p) => ({ ...p, legend: !p.legend }))
               }
             >
               <Route size={17} />
               <span>路線圖例 · {1 + (route.overlays?.length ?? 0)} 條</span>
+              <span className="panel-toggle-action">
+                {panelExpanded.legend ? "收合" : "展開"}
+              </span>
               <ChevronRight size={17} />
             </button>
-            <div id="route-legend-content" className="mobile-panel-content">
+            <div id="route-legend-content" className="map-panel-content">
               <strong>路線圖例</strong>
               <div className="legend-row">
                 <i style={{ borderColor: activeRouteColor }} />
@@ -819,21 +826,25 @@ export default function Editor() {
           </section>
           <div
             className="elevation-card"
-            data-expanded={mobilePanel === "elevation"}
+            data-expanded={panelExpanded.elevation}
           >
             <button
-              className="mobile-panel-toggle"
-              aria-expanded={mobilePanel === "elevation"}
+              className="map-panel-toggle"
+              aria-expanded={panelExpanded.elevation}
               aria-controls="elevation-content"
+              aria-label={panelExpanded.elevation ? "收合高度圖" : "展開高度圖"}
               onClick={() =>
-                setMobilePanel((p) => (p === "elevation" ? null : "elevation"))
+                setPanelExpanded((p) => ({ ...p, elevation: !p.elevation }))
               }
             >
               <Route size={17} />
               <span>高度圖</span>
+              <span className="panel-toggle-action">
+                {panelExpanded.elevation ? "收合" : "展開"}
+              </span>
               <ChevronRight size={17} />
             </button>
-            <div id="elevation-content" className="mobile-panel-content">
+            <div id="elevation-content" className="map-panel-content">
               <div className="elevation-heading">
                 <button
                   className="text-button"

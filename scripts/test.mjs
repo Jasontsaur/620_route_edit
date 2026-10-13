@@ -9,6 +9,7 @@ for (const source of [
   "lib/compact-import.ts",
   "lib/elevation.ts",
   "lib/mileage.ts",
+  "lib/map-interaction.ts",
   "lib/version-owner.ts",
   "lib/maps-settings.ts",
   "tests/route.test.ts",
@@ -21,7 +22,7 @@ for (const source of [
       },
     })
     .outputText.replace(
-      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|mileage|version-owner|maps-settings|compact-import|xml-track))\1/g,
+      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|mileage|map-interaction|version-owner|maps-settings|compact-import|xml-track))\1/g,
       "$1$2.mjs$1",
     );
   const target = ".sites-runtime/test/" + source.replace(/\.ts$/, ".mjs");

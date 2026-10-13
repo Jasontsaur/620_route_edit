@@ -1060,3 +1060,54 @@ test("reversed tracks, viewport and 50km map markers retain the fixed origin wit
   assert.equal(JSON.stringify(route), original);
   assert.ok(distance(route.points) < distance(reference.points));
 });
+
+test("wheel zoom halves each notch, accumulates trackpad input, reverses promptly and respects zoom bounds", async () => {
+  const { wheelPixels, addWheelPixels, wheelZoomBatch } =
+    await import("../lib/map-interaction");
+  for (const [value, mode] of [
+    [100, 0],
+    [3, 1],
+    [1, 2],
+  ]) {
+    assert.equal(wheelZoomBatch(wheelPixels(value, mode), 10, 0, 19).zoom, 9.5);
+    assert.equal(
+      wheelZoomBatch(wheelPixels(-value, mode), 10, 0, 19).zoom,
+      10.5,
+    );
+  }
+  let pending = 0;
+  for (let i = 0; i < 5; i++)
+    pending = addWheelPixels(pending, wheelPixels(10, 0));
+  assert.deepEqual(wheelZoomBatch(pending, 10, 0, 19), {
+    zoom: 10,
+    remainder: 50,
+  });
+  pending = addWheelPixels(pending, wheelPixels(10, 0));
+  assert.deepEqual(wheelZoomBatch(pending, 10, 0, 19), {
+    zoom: 9.5,
+    remainder: 0,
+  });
+  assert.equal(addWheelPixels(50, -60), -60);
+  assert.equal(wheelZoomBatch(120, 10, 0, 19).zoom, 9);
+  assert.equal(wheelZoomBatch(60, 0, 0, 19).zoom, 0);
+  assert.equal(wheelZoomBatch(-60, 19, 0, 19).zoom, 19);
+  assert.equal(wheelPixels(NaN, 0), 0);
+});
+
+test("fractional Google zoom keeps the same geographic position under the mouse", async () => {
+  const { zoomCenter } = await import("../lib/map-interaction");
+  const center = { x: 200, y: 110 },
+    offset = { x: 150, y: -70 };
+  for (const next of [9.5, 10.5]) {
+    const moved = zoomCenter(center, offset, 10, next);
+    assert.ok(
+      Math.abs(center.x + offset.x / 2 ** 10 - moved.x - offset.x / 2 ** next) <
+        1e-10,
+    );
+    assert.ok(
+      Math.abs(center.y + offset.y / 2 ** 10 - moved.y - offset.y / 2 ** next) <
+        1e-10,
+    );
+  }
+  assert.deepEqual(zoomCenter(center, { x: 0, y: 0 }, 10, 10.5), center);
+});

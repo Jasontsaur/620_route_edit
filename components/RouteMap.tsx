@@ -15,6 +15,12 @@ import {
 import type * as Leaflet from "leaflet";
 import type { MapViewport } from "../lib/elevation";
 import type { MileageReference } from "../lib/mileage";
+import {
+  wheelPixels,
+  addWheelPixels,
+  wheelZoomBatch,
+  zoomCenter,
+} from "../lib/map-interaction";
 export type Mode = "browse" | "edit" | "append" | "waypoint";
 type Props = {
   route: RouteData;
@@ -209,7 +215,78 @@ export default function RouteMap(props: Props) {
   useEffect(() => {
     let cancelled = false;
     let resizeObserver: ResizeObserver | undefined;
+    let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+    let pendingWheel = 0,
+      lastWheel = 0,
+      wheelPoint = { x: 0, y: 0 };
     const el = host.current!;
+    const onWheel = (event: WheelEvent) => {
+      if (
+        !map.current ||
+        event.ctrlKey ||
+        event.metaKey ||
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      )
+        return;
+      const pixels = wheelPixels(event.deltaY, event.deltaMode);
+      if (!pixels) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const now = performance.now();
+      if (now - lastWheel > 200) pendingWheel = 0;
+      lastWheel = now;
+      pendingWheel = addWheelPixels(pendingWheel, pixels);
+      const bounds = el.getBoundingClientRect();
+      wheelPoint = {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      };
+      if (wheelTimer !== undefined) return;
+      wheelTimer = setTimeout(() => {
+        wheelTimer = undefined;
+        if (cancelled || !map.current) return;
+        const currentZoom = map.current.getZoom();
+        if (typeof currentZoom !== "number") return;
+        const google = adapter.current === "google";
+        const min = google
+          ? (map.current.get("minZoom") ?? 0)
+          : map.current.getMinZoom();
+        const max = google
+          ? (map.current.get("maxZoom") ??
+            map.current.mapTypes.get(map.current.getMapTypeId())?.maxZoom ??
+            21)
+          : map.current.getMaxZoom();
+        const next = wheelZoomBatch(pendingWheel, currentZoom, min, max);
+        pendingWheel = next.remainder;
+        if (next.zoom === currentZoom) return;
+        if (google) {
+          const projection = map.current.getProjection();
+          const center = map.current.getCenter();
+          if (projection && center) {
+            const current = projection.fromLatLngToPoint(center);
+            const target = zoomCenter(
+              current,
+              {
+                x: wheelPoint.x - el.clientWidth / 2,
+                y: wheelPoint.y - el.clientHeight / 2,
+              },
+              currentZoom,
+              next.zoom,
+            );
+            map.current.moveCamera({
+              zoom: next.zoom,
+              center: projection.fromPointToLatLng(
+                new window.google.maps.Point(target.x, target.y),
+              ),
+            });
+          } else map.current.setZoom(next.zoom);
+        } else {
+          map.current.setZoomAround([wheelPoint.x, wheelPoint.y], next.zoom, {
+            animate: false,
+          });
+        }
+      }, 40);
+    };
     async function start() {
       lastViewport.current = null;
       state.current.onViewport(null);
@@ -227,6 +304,10 @@ export default function RouteMap(props: Props) {
           map.current = new window.google.maps.Map(el, {
             center: { lat: 23.7, lng: 120.9 },
             zoom: 7,
+            isFractionalZoomEnabled: true,
+            tilt: 0,
+            heading: 0,
+            scrollwheel: false,
             mapTypeId: mapType,
             mapTypeControl: false,
             streetViewControl: false,
@@ -251,6 +332,11 @@ export default function RouteMap(props: Props) {
             .map(el, {
               zoomControl: false,
               doubleClickZoom: false,
+              scrollWheelZoom: false,
+              zoomSnap: 0.5,
+              zoomDelta: 0.5,
+              // Leaflet ignores subsequent wheel updates while a CSS zoom
+              // animation is active. Apply the smaller steps immediately.
               zoomAnimation: false,
             })
             .setView([23.7, 120.9], 7);
@@ -272,6 +358,10 @@ export default function RouteMap(props: Props) {
           setProvider("OpenStreetMap 備用底圖");
         }
 
+        el.addEventListener("wheel", onWheel, {
+          passive: false,
+          capture: true,
+        });
         resizeObserver = new ResizeObserver(() => {
           if (!map.current || cancelled) return;
           if (adapter.current === "osm")
@@ -293,6 +383,8 @@ export default function RouteMap(props: Props) {
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
+      el.removeEventListener("wheel", onWheel, { capture: true });
+      if (wheelTimer !== undefined) clearTimeout(wheelTimer);
       if (map.current) {
         clear(layers);
         clear(handles);
