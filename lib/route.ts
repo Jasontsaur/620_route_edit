@@ -2,6 +2,7 @@ export type TrackPoint = {
   lat: number;
   lng: number;
   ele?: number;
+  recordedTime?: string;
   segment?: number;
 };
 export type Waypoint = TrackPoint & {
@@ -96,7 +97,10 @@ export function validPoint(p: unknown): p is TrackPoint {
     Number.isFinite(v.lng) &&
     Math.abs(v.lat) <= 90 &&
     Math.abs(v.lng) <= 180 &&
-    (v.ele === undefined || Number.isFinite(v.ele))
+    (v.ele === undefined || Number.isFinite(v.ele)) &&
+    (v.recordedTime === undefined ||
+      (typeof v.recordedTime === "string" &&
+        /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(v.recordedTime)))
   );
 }
 export function haversine(a: TrackPoint, b: TrackPoint) {

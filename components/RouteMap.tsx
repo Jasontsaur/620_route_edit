@@ -21,6 +21,7 @@ import {
   wheelZoomBatch,
   zoomCenter,
 } from "../lib/map-interaction";
+import { recordedPointAt } from "../lib/record-time";
 export type Mode = "browse" | "edit" | "append" | "waypoint";
 type Props = {
   route: RouteData;
@@ -73,13 +74,25 @@ export default function RouteMap(props: Props) {
     [mapType, setMapType] = useState<"roadmap" | "satellite" | "terrain">(
       "roadmap",
     ),
-    [provider, setProvider] = useState("載入地圖中…");
+    [provider, setProvider] = useState("載入地圖中…"),
+    [recordTip, setRecordTip] = useState<{
+      x: number;
+      y: number;
+      name: string;
+      clock: string;
+      pinned: boolean;
+    } | null>(null);
+  const timeFrame = useRef<number | null>(null);
+  const pinnedTimeTip = useRef(false);
   useEffect(() => {
     state.current = props;
   }, [props]);
   const click = (p: TrackPoint) => {
     const s = state.current;
-    if (s.mode === "waypoint") s.onAdd(p);
+    if (s.mode === "browse") {
+      pinnedTimeTip.current = false;
+      setRecordTip(null);
+    } else if (s.mode === "waypoint") s.onAdd(p);
     else if (s.mode === "append")
       s.onPoints([
         ...s.route.points,
@@ -92,6 +105,73 @@ export default function RouteMap(props: Props) {
       s.onPoints(ps);
     }
   };
+
+  function bindRecordingTime(line: any, points: TrackPoint[], name: string) {
+    if (!points.some((p) => p.recordedTime)) return;
+    const google = adapter.current === "google";
+    const show = (event: any, pinned: boolean) => {
+      if (state.current.mode !== "browse" || (!pinned && pinnedTimeTip.current))
+        return;
+      const location = google
+        ? { lat: event.latLng.lat(), lng: event.latLng.lng() }
+        : { lat: event.latlng.lat, lng: event.latlng.lng };
+      const mouse = google ? event.domEvent : event.originalEvent;
+      const bounds = host.current!.getBoundingClientRect();
+      const x = Math.max(
+        8,
+        Math.min(
+          bounds.width - 228,
+          (mouse?.clientX ?? bounds.left + bounds.width / 2) - bounds.left + 14,
+        ),
+      );
+      const y = Math.max(
+        8,
+        Math.min(
+          bounds.height - 84,
+          (mouse?.clientY ?? bounds.top + bounds.height / 2) - bounds.top + 14,
+        ),
+      );
+      if (timeFrame.current !== null) cancelAnimationFrame(timeFrame.current);
+      const update = () => {
+        timeFrame.current = null;
+        const point = recordedPointAt(points, location);
+        pinnedTimeTip.current = Boolean(pinned && point?.recordedTime);
+        setRecordTip(
+          point?.recordedTime
+            ? { x, y, name, clock: point.recordedTime, pinned }
+            : null,
+        );
+      };
+      if (pinned) {
+        event.stop?.();
+        update();
+      } else timeFrame.current = requestAnimationFrame(update);
+    };
+    const leave = () => {
+      if (timeFrame.current !== null) cancelAnimationFrame(timeFrame.current);
+      timeFrame.current = null;
+      setRecordTip((previous) => (previous?.pinned ? previous : null));
+    };
+    if (google) {
+      line.addListener("mousemove", (event: any) => show(event, false));
+      line.addListener("mouseout", leave);
+      line.addListener("click", (event: any) => show(event, true));
+    } else {
+      line.on("mousemove", (event: Leaflet.LeafletMouseEvent) =>
+        show(event, false),
+      );
+      line.on("mouseout", leave);
+      line.on("click", (event: Leaflet.LeafletMouseEvent) => show(event, true));
+    }
+  }
+  useEffect(() => {
+    pinnedTimeTip.current = false;
+    void Promise.resolve().then(() => setRecordTip(null));
+    return () => {
+      if (timeFrame.current !== null) cancelAnimationFrame(timeFrame.current);
+      timeFrame.current = null;
+    };
+  }, [props.route, props.mode]);
 
   function publishViewport() {
     const bounds = map.current?.getBounds();
@@ -405,44 +485,46 @@ export default function RouteMap(props: Props) {
     (s.route.overlays ?? []).forEach((layer, index) => {
       groups(layer.points).forEach((ps) => {
         if (adapter.current === "google") {
-          layers.current.push(
-            new window.google.maps.Polyline({
-              map: map.current,
-              path: ps,
-              strokeColor: overlayColor(index),
-              strokeWeight: 9,
-              strokeOpacity: 0,
-              clickable: false,
-              geodesic: true,
-              zIndex: index,
-              icons: [
-                {
-                  icon: {
-                    path: "M 0,-1 0,1",
-                    strokeColor: overlayColor(index),
-                    strokeOpacity: 0.8,
-                    strokeWeight: 9,
-                    scale: 3,
-                  },
-                  offset: "0",
-                  repeat: "20px",
-                },
-              ],
-            }),
-          );
-        } else {
-          layers.current.push(
-            L.current!.polyline(
-              ps.map((p) => [p.lat, p.lng]),
+          const line = new window.google.maps.Polyline({
+            map: map.current,
+            path: ps,
+            strokeColor: overlayColor(index),
+            strokeWeight: 9,
+            strokeOpacity: 0,
+            clickable: s.mode === "browse" && ps.some((p) => p.recordedTime),
+            geodesic: true,
+            zIndex: index,
+            icons: [
               {
-                color: overlayColor(index),
-                weight: 9,
-                opacity: 0.75,
-                dashArray: "12 8",
-                interactive: false,
+                icon: {
+                  path: "M 0,-1 0,1",
+                  strokeColor: overlayColor(index),
+                  strokeOpacity: 0.8,
+                  strokeWeight: 9,
+                  scale: 3,
+                },
+                offset: "0",
+                repeat: "20px",
               },
-            ).addTo(map.current),
-          );
+            ],
+          });
+          bindRecordingTime(line, ps, layer.name);
+          layers.current.push(line);
+        } else {
+          const line = L.current!.polyline(
+            ps.map((p) => [p.lat, p.lng]),
+            {
+              color: overlayColor(index),
+              weight: 9,
+              opacity: 0.75,
+              dashArray: "12 8",
+              interactive:
+                s.mode === "browse" && ps.some((p) => p.recordedTime),
+              bubblingMouseEvents: false,
+            },
+          ).addTo(map.current);
+          bindRecordingTime(line, ps, layer.name);
+          layers.current.push(line);
         }
       });
     });
@@ -461,6 +543,7 @@ export default function RouteMap(props: Props) {
         line.addListener("click", (e: any) =>
           click({ lat: e.latLng.lat(), lng: e.latLng.lng() }),
         );
+        bindRecordingTime(line, ps, s.route.name);
         layers.current.push(line);
       } else {
         const line = L.current!.polyline(
@@ -475,6 +558,7 @@ export default function RouteMap(props: Props) {
         line.on("click", (e: Leaflet.LeafletMouseEvent) =>
           click({ lat: e.latlng.lat, lng: e.latlng.lng }),
         );
+        bindRecordingTime(line, ps, s.route.name);
         layers.current.push(line);
       }
     });
@@ -620,6 +704,18 @@ export default function RouteMap(props: Props) {
             <option value="terrain">地形</option>
           </select>
         </label>
+      )}
+      {recordTip && (
+        <div
+          className="record-time-tooltip"
+          style={{ left: recordTip.x, top: recordTip.y }}
+          role="status"
+          aria-live="polite"
+        >
+          <small>{recordTip.name}</small>
+          <strong>{recordTip.clock}</strong>
+          <span>最近紀錄點 · 台灣時間</span>
+        </div>
       )}
       <span className="provider">{provider}</span>
     </div>

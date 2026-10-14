@@ -1483,3 +1483,34 @@ code {
     max-width: calc(100% - 136px);
   }
 }
+
+.record-time-tooltip {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  width: 220px;
+  max-width: calc(100% - 16px);
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fffffff5;
+  box-shadow: 0 3px 16px #173f5533;
+  border: 1px solid var(--line);
+}
+.record-time-tooltip small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.record-time-tooltip strong {
+  display: block;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.record-time-tooltip span {
+  font-size: 11px;
+  color: var(--muted);
+}

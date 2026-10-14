@@ -1111,3 +1111,91 @@ test("fractional Google zoom keeps the same geographic position under the mouse"
   }
   assert.deepEqual(zoomCenter(center, { x: 0, y: 0 }, 10, 10.5), center);
 });
+
+test("recording clocks use Taiwan time, exactly HH:MM:SS and correctly cross midnight", async () => {
+  const { recordingClock } = await import("../lib/record-time");
+  assert.equal(recordingClock("2026-10-13T15:59:59Z"), "23:59:59");
+  assert.equal(recordingClock("2026-10-13T16:00:00Z"), "00:00:00");
+  assert.equal(recordingClock("2026-10-14T07:08:09+08:00"), "07:08:09");
+  for (const time of [undefined, "invalid", "2026-10-14T07:08:09"])
+    assert.equal(recordingClock(time), undefined);
+});
+
+test("record time tooltip selects an actual sample, never interpolates or invents missing time", async () => {
+  const { recordedPointAt } = await import("../lib/record-time");
+  const points = [
+    { lat: 23, lng: 120, recordedTime: "07:00:00" },
+    { lat: 23, lng: 120.001, recordedTime: "07:05:00" },
+  ];
+  assert.equal(
+    recordedPointAt(points, { lat: 23, lng: 120.0008 })?.recordedTime,
+    "07:05:00",
+  );
+  assert.equal(
+    recordedPointAt(points, { lat: 23, lng: 120.0002 })?.recordedTime,
+    "07:00:00",
+  );
+  assert.equal(
+    recordedPointAt([...points, { lat: 23, lng: 120.002 }], {
+      lat: 23,
+      lng: 120.002,
+    }),
+    null,
+  );
+  assert.equal(recordedPointAt([], { lat: 23, lng: 120 }), null);
+  const route = { name: "Recorded", provenance: "test", points, waypoints: [] };
+  assert.equal(
+    validateRoute(JSON.parse(JSON.stringify(route))).points[0].recordedTime,
+    "07:00:00",
+  );
+  const thinned = thinTrack(points, 2, 1);
+  assert.equal(thinned[1].recordedTime, "07:05:00");
+  for (const clock of [
+    "24:00:00",
+    "07:60:00",
+    "07:00:60",
+    "7:00:00",
+    "<script>",
+  ])
+    assert.throws(() =>
+      validateRoute({
+        ...route,
+        points: [{ ...points[0], recordedTime: clock }, points[1]],
+      }),
+    );
+});
+
+test("520 default retains all 3892 validated clocks without publishing activity dates or changing geometry", async () => {
+  const ride = validateRoute(
+    JSON.parse(await readFile("public/data/520-activity-slim.json", "utf8")),
+  );
+  assert.equal(ride.points.length, 3892);
+  assert.ok(
+    ride.points.every((p) =>
+      /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(p.recordedTime ?? ""),
+    ),
+  );
+  assert.ok(
+    ride.points.every((p) =>
+      Object.keys(p).every((k) =>
+        ["lat", "lng", "ele", "segment", "recordedTime"].includes(k),
+      ),
+    ),
+  );
+  assert.ok(Math.abs(distance(ride.points) - 516465.98) < 1);
+  const official = validateRoute(
+    JSON.parse(await readFile("public/data/twb-2026.json", "utf8")),
+  );
+  const initial = builtInRoute(official, ride);
+  const imported = addImportedRoute(initial, {
+    name: "New route",
+    provenance: "test",
+    points: official.points.slice(0, 3),
+    waypoints: [],
+  });
+  assert.equal(
+    imported.overlays!.at(-1)!.points[0].recordedTime,
+    ride.points[0].recordedTime,
+  );
+  assert.ok(JSON.stringify(initial).length < 1800000);
+});
