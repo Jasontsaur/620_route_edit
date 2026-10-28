@@ -132,8 +132,50 @@ button.primary:hover {
 }
 .workspace {
   display: flex;
-  height: calc(100dvh - 78px);
+  height: calc(100dvh - 112px);
   min-height: 650px;
+}
+.sync-strip {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 18px;
+  background: #edf5f8;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.sync-strip > svg {
+  flex-shrink: 0;
+}
+.sync-strip > span {
+  flex: 1;
+}
+.sync-strip small {
+  color: var(--muted);
+}
+.sync-strip button {
+  font-size: 12px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.sync-strip[data-state="error"],
+.sync-strip[data-state="conflict"] {
+  background: #fff0e9;
+  color: #9d3a26;
+}
+.history-switch {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  margin: 12px 0;
+}
+.history-switch select {
+  min-width: 0;
+  flex: 1;
+  font-size: 12px;
+  padding: 6px;
 }
 .sidebar {
   width: 345px;
@@ -1532,4 +1574,24 @@ code {
   margin: 0;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 680px), (max-width: 950px) and (pointer: coarse) {
+  .sync-strip {
+    padding: 4px 10px;
+    gap: 5px;
+    flex-wrap: wrap;
+  }
+  .sync-strip small {
+    display: none;
+  }
+  .sync-strip > span {
+    min-width: 120px;
+  }
+  .sync-strip button {
+    min-height: 28px;
+  }
+  .map-wrap {
+    height: clamp(280px, calc(100svh - 148px), 740px);
+  }
 }

@@ -23,7 +23,14 @@ import {
 } from "../lib/route";
 import { projector, type MileageReference } from "../lib/mileage";
 export type Panel =
-  null | "settings" | "save" | "export" | "source" | "point" | "simplify";
+  | null
+  | "settings"
+  | "save"
+  | "export"
+  | "source"
+  | "point"
+  | "simplify"
+  | "editing-link";
 type Props = {
   panel: Panel;
   close: () => void;
@@ -37,6 +44,8 @@ type Props = {
   save: (note: string) => Promise<void>;
   exportAs: (f: "fit" | "tcx" | "gpx" | "json") => Promise<void>;
   busy: boolean;
+  canEdit: boolean;
+  editingLink: string;
   storageName: string;
 };
 const clock = (s: string) =>
@@ -61,6 +70,8 @@ export default function Dialogs({
   save,
   exportAs,
   busy,
+  canEdit,
+  editingLink,
   storageName,
 }: Props) {
   const [keyInput, setKeyInput] = useState(""),
@@ -126,6 +137,7 @@ export default function Dialogs({
             source: "官方資料",
             point: "點位編輯",
             simplify: "簡化軌跡",
+            "editing-link": "私人編輯連結",
           }[panel]
         }
         onClick={(e) => e.stopPropagation()}
@@ -136,6 +148,41 @@ export default function Dialogs({
             <X size={20} />
           </button>
         </div>
+        {panel === "editing-link" && canEdit && (
+          <>
+            <h2>私人編輯連結</h2>
+            <p>
+              在自己的其他裝置開啟即可編輯。原網址供所有人瀏覽；此連結含編輯權限，請勿公開分享。
+            </p>
+            <label>
+              長按或選取後複製
+              <textarea
+                readOnly
+                rows={4}
+                value={editingLink}
+                onFocus={(e) => e.target.select()}
+              />
+            </label>
+            <div className="modal-actions">
+              <button onClick={close}>關閉</button>
+              <button
+                className="primary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(editingLink);
+                    setKeyResult("已複製編輯連結。");
+                  } catch {
+                    setKeyResult("請選取上方連結，使用系統的複製功能。");
+                  }
+                }}
+              >
+                <Copy size={16} />
+                複製連結
+              </button>
+            </div>
+            <p role="status">{keyResult}</p>
+          </>
+        )}
         {panel === "simplify" && (
           <>
             <h2>簡化軌跡</h2>
@@ -174,6 +221,7 @@ export default function Dialogs({
                 className="primary"
                 disabled={
                   busy ||
+                  !canEdit ||
                   simplify(route.points, tolerance).length ===
                     route.points.length
                 }
@@ -308,11 +356,14 @@ export default function Dialogs({
         {panel === "save" && (
           <>
             <h2>儲存路線版本</h2>
-            <p>每次儲存都會新增版本，保留之前的路線與點位。</p>
+            <p>
+              最新路線會自動保存，任何裝置開啟原網址都能看到。這裡另存一份歷史快照，供日後回復與比較；所有共用版本皆公開可見。
+            </p>
             <label>
               路線名稱
               <input
                 value={route.name}
+                readOnly={!canEdit}
                 maxLength={120}
                 onChange={(e) => edit({ ...route, name: e.target.value })}
               />
@@ -339,7 +390,7 @@ export default function Dialogs({
               <button
                 className="primary"
                 onClick={() => void save(note)}
-                disabled={busy || !route.name.trim()}
+                disabled={busy || !canEdit || !route.name.trim()}
               >
                 {busy ? "儲存中…" : "儲存新版本"}
               </button>
@@ -461,6 +512,7 @@ export default function Dialogs({
               點位名稱
               <input
                 value={selected.name}
+                readOnly={!canEdit}
                 maxLength={120}
                 onChange={(e) =>
                   setSelected({ ...selected, name: e.target.value })
@@ -471,6 +523,7 @@ export default function Dialogs({
               類型
               <select
                 value={selected.kind}
+                disabled={!canEdit}
                 onChange={(e) =>
                   setSelected({
                     ...selected,
@@ -492,6 +545,7 @@ export default function Dialogs({
                   type="number"
                   step="0.000001"
                   value={selected.lat}
+                  readOnly={!canEdit}
                   onChange={(e) =>
                     setSelected({ ...selected, lat: Number(e.target.value) })
                   }
@@ -503,6 +557,7 @@ export default function Dialogs({
                   type="number"
                   step="0.000001"
                   value={selected.lng}
+                  readOnly={!canEdit}
                   onChange={(e) =>
                     setSelected({ ...selected, lng: Number(e.target.value) })
                   }
@@ -515,6 +570,7 @@ export default function Dialogs({
                 rows={3}
                 maxLength={3000}
                 value={selected.note}
+                readOnly={!canEdit}
                 onChange={(e) =>
                   setSelected({ ...selected, note: e.target.value })
                 }
@@ -564,7 +620,9 @@ export default function Dialogs({
             <div className="modal-actions">
               <button
                 className="danger"
-                disabled={!route.waypoints.some((w) => w.id === selected.id)}
+                disabled={
+                  !canEdit || !route.waypoints.some((w) => w.id === selected.id)
+                }
                 onClick={() => {
                   edit({
                     ...route,
@@ -581,6 +639,7 @@ export default function Dialogs({
               <button
                 className="primary"
                 disabled={
+                  !canEdit ||
                   !selected.name.trim() ||
                   !Number.isFinite(selected.lat) ||
                   !Number.isFinite(selected.lng) ||

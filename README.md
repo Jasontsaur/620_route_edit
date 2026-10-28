@@ -28,6 +28,20 @@ TWB 2026 四極點620 的繁體中文路線編輯器。可編輯路線、管理�
 
 內建「520 騎乘紀錄（瘦身）」的3,892個保留軌跡點已從原始GPX補回實際紀錄時刻，以台灣時間（Asia/Taipei）儲存 HH:MM:SS，沒有公開活動日期或心率等其他感測紀錄；速度及10秒平均功率詳見下方說明。瀏覽模式下滑鼠移到該路線上，會顯示最近保留紀錄點的時間；點擊可固定提示，點地圖空白處關閉。Google Maps與備用底圖皆支援，路線轉為參考圖層後也可查看。顯示的是實際GPS點的時間，不在兩點之間推估。新增、拖曳後不具原紀錄時間的點位不會補造時間。雲端版本及完整JSON備份保留 recordedTime；較早儲存且未包含此欄位的版本不會顯示時間，請載入最新預設路線。FIT／TCX 匯出的課程時間仍按原本規則生成。
 
+## 自動儲存與歷史版本
+
+全站共用同一份最新工作路線。以私人編輯連結開啟後，匯入 GPX／TCX／FIT／JSON、編輯軌跡、點位、名稱及參考圖層，都會自動保存到後端 D1；停止編輯約1.2秒後儲存，匯入與回復版本則立即排入儲存。原檔不會上傳，保存的是匯入、瘦身後的路線資料，包含所有圖層、點位及已解析的時間／速度／功率。任何裝置開啟原網址，都會讀取後端最新內容；未曾儲存時才顯示內建雙路線。頁面保留載入時的快照，已開啟的其他頁面需重新載入才能取得最新路線。
+
+「儲存版本」另存一份不會被後續編輯改寫的歷史快照，供回復及比較長度。每次匯入與回復也會建立快照，一般自動儲存只更新最新工作內容。回復會保存為新的共用狀態與快照，舊快照仍保留。共用版本紀錄列出最近100筆；不會自動刪除更早的版本。
+
+原網址免登入、公開可看。更新功能預設需要私人編輯連結（網址片段 #route-edit=…），首次開啟即換取一年有效的 HttpOnly／SameSite=Strict 編輯 Cookie，並移除網址片段；不使用 localStorage 保存管理權限。編輯者可按「複製編輯連結」帶到自己的其他裝置，請勿公開分享此連結。秘密環境變數 SHARED_ROUTE_EDIT_KEY 是256-bit隨機金鑰，僅存於主機；更換金鑰並部署即可撤銷舊連結與 Cookie。不要把真實金鑰寫入程式、README或GitHub。若站台擁有者明確選擇所有訪客可編輯，才設定 SHARED_ROUTE_PUBLIC_EDIT=true；預設未設定。公開瀏覽與更新權限彼此分開，沒有登入畫面。
+
+儲存採版本比對，兩台裝置同時更新時，較舊頁面會顯示衝突並停止自動寫入，不會默默覆蓋新內容。先匯出 JSON 備份，再按「重新載入」取得最新內容。連線失敗時保留目前修改，按「重試儲存」；重試同一操作不會重複建立匯入版本。只有收到後端成功回應才標示已保存，關閉尚未保存的頁面會提醒。初始讀取失敗只顯示內建路線與錯誤提示，不能把備用內容自動覆蓋到後端。
+
+舊版的私人歷史版本仍依原瀏覽器 Cookie 或既有登入身分區隔。版本來源選單可查看「此瀏覽器的舊版私人版本」，不會自動公開；按「載入並共用」並確認後才轉成公開共用路線。更新之前僅留在舊頁面記憶體、未儲存過的匯入內容，需再匯入一次。
+
+新增端點 GET／POST /api/shared-route、GET /api/shared-route/versions，以及私人編輯連結的 /api/shared-route/access。新資料表 shared_route_state 由追加的 Drizzle migration 建立；現有私人版本與地圖設定不變。所有寫入檢查編輯權限、同來源與 CSRF，路線內容仍限制1.8MB，超過時請先簡化或移除不需要的圖層。共用最新路線和歷史版本存於站台資料庫，GitHub僅保存程式與公開內建資料。
+
 ## Google Maps
 
 金鑰改由後端資料庫 map_settings 共用保存，所有裝置讀取同一設定。網站擁有者透過私密管理連結開啟設定頁，貼上金鑰後按「儲存金鑰到後端」，再重新檢查設定。公開設定面板只顯示狀態與說明，無法修改金鑰。保留管理輸入功能，之後可再移除。
@@ -36,7 +50,7 @@ TWB 2026 四極點620 的繁體中文路線編輯器。可編輯路線、管理�
 
 GET /api/maps-config 不快取地回傳 Maps JavaScript API 的瀏覽器金鑰，管理權杖永遠不回傳。也可設定秘密環境變數 GOOGLE_MAPS_API_KEY 作為未填入資料庫前的備用；資料庫設定優先。不要使用 NEXT_PUBLIC_ 前綴，不要把真實金鑰寫入原始碼或 GitHub。Sites 秘密環境變數變更後需重新部署。
 
-啟用 **Maps JavaScript API**、專案計費，並將金鑰的應用程式限制設為網站 HTTP referrer、API 限制設為 Maps JavaScript API。正式網站來源為 https://twb-620-route-editor.purplebread.chatgpt.site/*；設定面板會顯示目前來源。瀏覽器型 Maps JavaScript API 載入時必須使用金鑰，後端存放不會讓金鑰在瀏覽器完全不可見，請依 [Google 官方安全說明](https://developers.google.com/maps/api-security-best-practices) 限制使用來源。
+啟用 **Maps JavaScript API**、專案計費，並將金鑰的應用程式限制設為網站 HTTP referrer、API 限制設為 Maps JavaScript API。正式網站來源為 https://twb-620-route-editor.jasontsaur.chatgpt.site/*；設定面板會顯示目前來源。瀏覽器型 Maps JavaScript API 載入時必須使用金鑰，後端存放不會讓金鑰在瀏覽器完全不可見，請依 [Google 官方安全說明](https://developers.google.com/maps/api-security-best-practices) 限制使用來源。
 
 Google Maps 成功載入後，地圖右上方「全線」下方的選單提供「地圖／衛星／地形」。切換時保留路線、點位與高程圖。備用 OpenStreetMap 不顯示 Google 圖層選單。未設定後端金鑰時會暫用此瀏覽器以前保存的金鑰，僅讀取、不自動上傳或新增本機設定；沒有舊金鑰則使用 OpenStreetMap。重新檢查設定會重新整理頁面，請先儲存編輯。
 
@@ -66,12 +80,14 @@ Google Maps 成功載入後，地圖右上方「全線」下方的選單提供�
 ```sh
 npm ci
 npm run build
-# 首次建立本機 D1 資料表：
+# 首次建立本機 D1 資料表；既有資料庫只執行尚未套用的 migration：
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_optimal_black_tom.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_overconfident_cable.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_known_jamie_braddock.sql
 npm run dev
 ```
 
-開啟 `http://127.0.0.1:5173/`。網站免登入即可使用；資料保存在忽略追蹤的 `.wrangler/state`。上線使用 D1 儲存，匿名版本以各瀏覽器的隨機 Cookie 識別碼區隔。若瀏覽器仍有之前的 Sites 登入身分，會沿用帳號版本；未登入時不公開舊帳號的版本。
+開啟 `http://127.0.0.1:5173/`。網站免登入即可使用；資料保存在忽略追蹤的 `.wrangler/state`。上線使用 D1 儲存全站共用的最新路線與新版本；舊私人版本仍依原識別方式區隔，不會自動公開。本機編輯請在忽略追蹤的 .dev.vars 設定測試用 SHARED_ROUTE_EDIT_KEY，或僅在本機設定 SHARED_ROUTE_PUBLIC_EDIT=true。
 
 ```sh
 npm run lint:app
@@ -80,7 +96,7 @@ npm test
 npm run build
 ```
 
-React 19、Vinext／Vite、Leaflet、Google Maps JavaScript API、Garmin FIT SDK、Cloudflare D1／Drizzle。`lib/route.ts` 管理幾何與點位，`lib/files.ts` 處理 Garmin 檔案，`app/api/maps-config/route.ts` 管理共用地圖設定；`app/api/versions/route.ts` 管理免登入的雲端版本；`lib/version-owner.ts` 管理匿名儲存識別碼。
+React 19、Vinext／Vite、Leaflet、Google Maps JavaScript API、Garmin FIT SDK、Cloudflare D1／Drizzle。`lib/route.ts` 管理幾何與點位，`lib/files.ts` 處理 Garmin 檔案，`app/api/maps-config/route.ts` 管理共用地圖設定；`app/api/shared-route/` 管理最新共用路線及歷史快照，`app/api/versions/route.ts` 保留舊私人版本；`lib/version-owner.ts` 管理匿名儲存識別碼。
 
 每次匯入上限 100MB、原始單條最多 100 萬軌跡點、500 點位；原始點數超過 12,000 點會自動瘦身後再驗證及匯入，逐步採用 2–50m 位置／1–10m 高度容差，目標 12,000 點，瘦身後仍不得超過 50,000 點。保留各 GPS 分段端點、轉彎、主要高程變化、缺失高度邊界，並每 500m 保留定位錨點；無法保留必要斷點而縮至上限時，會提示分段匯入。GPX／TCX／FIT 與 JSON 備份（含參考圖層）皆適用，點位不會自動刪除。支援 Web Worker 的瀏覽器在背景解析及簡化，並顯示處理階段及前後點數；GPX／TCX 以串流 XML 解析，不建立整棵 DOM，也不保留心率等感測擴充資料，以降低記憶體用量。原始檔案不會改寫。簡化後量測里程可能減少，原檔請保留供比對。雲端單版 JSON 上限仍為 1.8MB，多次匯入的參考圖層過多時可移除不需要的圖層。金鑰、資料庫、後端地圖設定、個人路線版本與開發快取不會提交 GitHub，GitHub 同步的是程式和公開基準資料。
 

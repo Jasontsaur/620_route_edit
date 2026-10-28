@@ -19,3 +19,12 @@ export const mapSettings = sqliteTable("map_settings", {
   apiKey: text("api_key").notNull(),
   updated: text("updated").notNull(),
 });
+
+export const sharedRoute = sqliteTable("shared_route_state", {
+  id: text("id").primaryKey(),
+  revision: text("revision").notNull(),
+  updated: text("updated").notNull(),
+  versionId: text("version_id"),
+  operationHash: text("operation_hash").notNull(),
+  payload: text("payload").notNull(),
+});

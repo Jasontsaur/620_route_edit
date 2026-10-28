@@ -14,7 +14,7 @@
     "db:generate": "drizzle-kit generate",
     "test": "node scripts/test.mjs",
     "typecheck": "tsc --noEmit",
-    "lint:app": "eslint app/api/versions/route.ts app/api/maps-config/route.ts app/page.tsx app/layout.tsx components/Editor.tsx components/Dialogs.tsx components/RouteMap.tsx components/ElevationProfile.tsx lib/route.ts lib/files.ts lib/xml-track.ts lib/compact-import.ts lib/import-client.ts lib/route-import.worker.ts lib/elevation.ts lib/mileage.ts lib/map-interaction.ts lib/record-time.ts lib/record-metrics.ts lib/version-owner.ts lib/maps-settings.ts db/index.ts db/schema.ts tests/route.test.ts scripts/test.mjs"
+    "lint:app": "eslint app/api/versions/route.ts app/api/maps-config/route.ts app/page.tsx app/layout.tsx components/Editor.tsx components/Dialogs.tsx components/RouteMap.tsx components/ElevationProfile.tsx lib/route.ts lib/files.ts lib/xml-track.ts lib/compact-import.ts lib/import-client.ts lib/route-import.worker.ts lib/elevation.ts lib/mileage.ts lib/map-interaction.ts lib/record-time.ts lib/record-metrics.ts lib/version-owner.ts lib/maps-settings.ts db/index.ts db/schema.ts tests/route.test.ts scripts/test.mjs app/api/shared-route/route.ts app/api/shared-route/access/route.ts app/api/shared-route/versions/route.ts lib/shared-access.ts lib/shared-store.ts lib/shared-client.ts tests/shared.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

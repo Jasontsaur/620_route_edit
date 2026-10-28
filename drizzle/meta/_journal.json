@@ -15,6 +15,13 @@
       "when": 1791868251128,
       "tag": "0001_overconfident_cable",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793169623560,
+      "tag": "0002_known_jamie_braddock",
+      "breakpoints": true
     }
   ]
 }

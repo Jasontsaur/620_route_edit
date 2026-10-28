@@ -24,6 +24,8 @@ import {
 import RouteMap, { type Mode } from "./RouteMap";
 import ElevationProfile from "./ElevationProfile";
 import { importRouteFile } from "../lib/import-client";
+import { SharedRouteClient, CloudSaveError } from "../lib/shared-client";
+import type { SaveAction } from "../lib/shared-store";
 import type { ImportSummary } from "../lib/compact-import";
 import type { MapViewport } from "../lib/elevation";
 import Dialogs, { type Panel } from "./Dialogs";
@@ -110,42 +112,54 @@ export default function Editor() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false),
-    [savedId, setSavedId] = useState<string | undefined>(),
+    [canEdit, setCanEdit] = useState(false),
+    [publicEdit, setPublicEdit] = useState(false),
+    [syncState, setSyncState] = useState<
+      "loading" | "saved" | "dirty" | "saving" | "error" | "conflict"
+    >("loading"),
+    [syncError, setSyncError] = useState(""),
+    [updated, setUpdated] = useState<string | null>(null),
+    [legacy, setLegacy] = useState(false),
+    [editingLink, setEditingLink] = useState(""),
+    [versionTick, setVersionTick] = useState(0),
     [undoReady, setUndoReady] = useState(false),
     [redoReady, setRedoReady] = useState(false),
     [compare, setCompare] = useState<Version | null>(null);
   const file = useRef<HTMLInputElement>(null),
     past = useRef<RouteData[]>([]),
     future = useRef<RouteData[]>([]),
-    current = useRef<RouteData | null>(null);
-  useEffect(() => {
-    current.current = route;
-  }, [route]);
+    current = useRef<RouteData | null>(null),
+    editorEnabled = useRef(false),
+    cloud = useRef(new SharedRouteClient()),
+    saving = useRef<Promise<boolean> | null>(null),
+    queued = useRef<SaveAction>("autosave");
   const closePanel = useCallback(() => setPanel(null), []);
   const edit = (next: RouteData) => {
+    if (!editorEnabled.current) return;
     if (current.current) {
       past.current.push(clone(current.current));
       if (past.current.length > 35) past.current.shift();
     }
     future.current = [];
+    current.current = next;
     setRoute(next);
     setDirty(true);
+    setSyncState((s) =>
+      s === "error" || s === "conflict" || s === "saving" ? s : "dirty",
+    );
     setUndoReady(past.current.length > 0);
     setRedoReady(future.current.length > 0);
   };
-  async function loadVersions() {
-    try {
-      const r = await fetch("/api/versions", { cache: "no-store" }),
-        d = (await r.json()) as { error?: string; versions: Version[] };
-      if (!r.ok) throw Error(d.error);
-      setVersions(d.versions);
-      setVersionError("");
-    } catch (e) {
-      setVersionError(e instanceof Error ? e.message : "版本讀取失敗");
-    }
+  function loadVersions() {
+    setVersionTick((v) => v + 1);
   }
   useEffect(() => {
     let active = true;
+    const routeToken =
+      new URLSearchParams(location.hash.slice(1)).get("route-edit") ??
+      undefined;
+    if (routeToken)
+      history.replaceState(null, "", location.pathname + location.search);
 
     Promise.all(
       [
@@ -157,20 +171,44 @@ export default function Editor() {
         return response.json();
       }),
     )
-      .then(([official, ride]) => {
+      .then(async ([official, ride]) => {
         if (active) {
           const reference = validateRoute(official);
           setMileageReference({
             name: reference.name,
             points: reference.points,
           });
-          setRoute(builtInRoute(official, ride));
+          const fallback = builtInRoute(official, ride);
+          try {
+            const shared = await cloud.current.load(routeToken);
+            if (!active) return;
+            const next = shared.route ?? fallback;
+            current.current = next;
+            setRoute(next);
+            editorEnabled.current = shared.canEdit;
+            setCanEdit(shared.canEdit);
+            setPublicEdit(shared.publicEdit);
+            setUpdated(shared.updated);
+            setSyncState("saved");
+          } catch (e) {
+            if (!active) return;
+            current.current = fallback;
+            setRoute(fallback);
+            setSyncState("error");
+            setSyncError(e instanceof Error ? e.message : "共用路線讀取失敗。");
+          }
         }
       })
       .catch((e) => {
         if (active) setError(e.message);
       });
     const captureSetup = () => {
+      if (new URLSearchParams(location.hash.slice(1)).get("route-edit")) {
+        // Opening an editing link in an existing tab may only change its hash.
+        // A real reload consumes it through the same initialization path.
+        location.reload();
+        return;
+      }
       const setupToken = new URLSearchParams(location.hash.slice(1)).get(
         "maps-setup",
       );
@@ -219,7 +257,6 @@ export default function Editor() {
         setMapsConfigStatus(previousKey ? "legacy" : "error");
       })
       .finally(() => clearTimeout(timeout));
-    void Promise.resolve().then(loadVersions);
     return () => {
       active = false;
       clearTimeout(timeout);
@@ -227,6 +264,70 @@ export default function Editor() {
       window.removeEventListener("hashchange", captureSetup);
     };
   }, []);
+  useEffect(() => {
+    let active = true;
+    fetch(legacy ? "/api/versions" : "/api/shared-route/versions", {
+      cache: "no-store",
+    })
+      .then(async (r) => {
+        const d = (await r.json()) as { error?: string; versions: Version[] };
+        if (!r.ok) throw Error(d.error);
+        if (active) {
+          setVersions(d.versions);
+          setVersionError("");
+        }
+      })
+      .catch((e) => {
+        if (active) setVersionError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [legacy, versionTick]);
+  const persist = useCallback(async (manualNote?: string): Promise<boolean> => {
+    if (saving.current || !editorEnabled.current || !current.current)
+      return false;
+    const client = cloud.current;
+    const sentRoute = client.pending?.route ?? current.current;
+    const action =
+      client.pending?.action ??
+      (manualNote !== undefined ? "snapshot" : queued.current);
+    const note = client.pending?.note ?? manualNote ?? "";
+    if (!client.pending) queued.current = "autosave";
+    setSyncState("saving");
+    setSyncError("");
+    const task = (async () => {
+      try {
+        const ack = await client.save(sentRoute, action, note);
+        setUpdated(ack.updated);
+        const stillDirty = current.current !== sentRoute;
+        setDirty(stillDirty);
+        setSyncState(stillDirty ? "dirty" : "saved");
+        if (action !== "autosave") setVersionTick((v) => v + 1);
+        return true;
+      } catch (e) {
+        setSyncError(e instanceof Error ? e.message : "自動儲存失敗，請重試。");
+        setSyncState(
+          e instanceof CloudSaveError && e.status === 409
+            ? "conflict"
+            : "error",
+        );
+        return false;
+      } finally {
+        saving.current = null;
+      }
+    })();
+    saving.current = task;
+    return task;
+  }, []);
+  useEffect(() => {
+    if (!dirty || !canEdit || busy || syncState !== "dirty") return;
+    const timer = setTimeout(
+      () => void persist(),
+      queued.current === "autosave" ? 1200 : 0,
+    );
+    return () => clearTimeout(timer);
+  }, [route, dirty, canEdit, busy, syncState, persist]);
   useEffect(() => {
     const handle = (e: BeforeUnloadEvent) => {
       if (dirty) {
@@ -238,18 +339,28 @@ export default function Editor() {
     return () => window.removeEventListener("beforeunload", handle);
   }, [dirty]);
   function undo() {
-    if (!past.current.length || !current.current) return;
+    if (!editorEnabled.current || !past.current.length || !current.current)
+      return;
     future.current.push(clone(current.current));
-    setRoute(past.current.pop()!);
+    current.current = past.current.pop()!;
+    setRoute(current.current);
     setDirty(true);
+    setSyncState((s) =>
+      s === "error" || s === "conflict" || s === "saving" ? s : "dirty",
+    );
     setUndoReady(past.current.length > 0);
     setRedoReady(future.current.length > 0);
   }
   function redo() {
-    if (!future.current.length || !current.current) return;
+    if (!editorEnabled.current || !future.current.length || !current.current)
+      return;
     past.current.push(clone(current.current));
-    setRoute(future.current.pop()!);
+    current.current = future.current.pop()!;
+    setRoute(current.current);
     setDirty(true);
+    setSyncState((s) =>
+      s === "error" || s === "conflict" || s === "saving" ? s : "dirty",
+    );
     setUndoReady(past.current.length > 0);
     setRedoReady(future.current.length > 0);
   }
@@ -300,6 +411,7 @@ export default function Editor() {
       });
   }
   async function importSelected(f: File) {
+    if (!editorEnabled.current) return;
     setBusy(true);
     setError("");
     try {
@@ -315,8 +427,12 @@ export default function Editor() {
         !window.confirm("要載入 JSON 備份？目前修改可用復原返回。")
       )
         return;
-      edit(route ? addImportedRoute(route, next, restoreBackup) : next);
-      setSavedId(undefined);
+      queued.current = "import";
+      edit(
+        current.current
+          ? addImportedRoute(current.current, next, restoreBackup)
+          : next,
+      );
       setFocus(null);
       setMode("browse");
       setFit((v) => v + 1);
@@ -332,25 +448,16 @@ export default function Editor() {
     }
   }
   async function save(note: string) {
-    if (!route || busy) return;
+    if (!route || busy || !editorEnabled.current || syncState === "conflict")
+      return;
     setBusy(true);
     setError("");
     try {
-      const r = await fetch("/api/versions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            route: { ...route, parentId: savedId },
-            note,
-          }),
-        }),
-        d = (await r.json()) as { error?: string; id: string };
-      if (!r.ok) throw Error(d.error);
-      setSavedId(d.id);
-      setDirty(current.current !== route);
+      if (saving.current && !(await saving.current)) return;
+      if (cloud.current.pending && !(await persist())) return;
+      if (!(await persist(note))) return;
       setPanel(null);
-      setMessage(`版本已儲存到${storageName}。`);
-      await loadVersions();
+      setMessage("已建立共用歷史版本；最新路線也已自動保存。");
     } catch (e) {
       setError(e instanceof Error ? e.message : "儲存失敗");
     } finally {
@@ -358,6 +465,14 @@ export default function Editor() {
     }
   }
   async function restore(v: Version) {
+    if (!editorEnabled.current) return;
+    if (
+      legacy &&
+      !window.confirm(
+        "此為舊版私人版本。載入後會自動保存為全站共用路線，所有訪客都能看到。要載入並共用？",
+      )
+    )
+      return;
     if (
       dirty &&
       !window.confirm("目前有未儲存的修改。要載入此版本？可用復原返回。")
@@ -365,14 +480,16 @@ export default function Editor() {
       return;
     setBusy(true);
     try {
-      const r = await fetch("/api/versions?id=" + encodeURIComponent(v.id)),
+      const r = await fetch(
+          (legacy ? "/api/versions?id=" : "/api/shared-route/versions?id=") +
+            encodeURIComponent(v.id),
+        ),
         d = (await r.json()) as { error?: string; route: RouteData };
       if (!r.ok) throw Error(d.error);
+      queued.current = "restore";
       edit(validateRoute(d.route));
-      setSavedId(v.id);
-      setDirty(false);
       setFit((x) => x + 1);
-      setMessage("已載入版本；後續儲存會建立新版本。");
+      setMessage("已載入版本，正在保存為最新共用路線；原歷史版本仍保留。");
     } catch (e) {
       setError(e instanceof Error ? e.message : "載入失敗");
     } finally {
@@ -447,16 +564,18 @@ export default function Editor() {
         </div>
         <div className="top-status">
           <Cloud size={15} />
-          <span>
-            {dirty
-              ? "有未儲存的修改"
-              : savedId
-                ? `已載入${storageName}版本`
-                : "預設雙路線"}
-          </span>
+          <span>全站共用路線</span>
         </div>
         <div className="top-actions">
-          <button onClick={() => file.current?.click()} disabled={busy}>
+          <button
+            onClick={() => file.current?.click()}
+            disabled={busy || !canEdit}
+            title={
+              canEdit
+                ? "匯入後會自動保存並公開顯示"
+                : "請使用私人編輯連結啟用匯入"
+            }
+          >
             <Upload size={16} />
             <span>匯入軌跡</span>
           </button>
@@ -467,7 +586,7 @@ export default function Editor() {
           <button
             className="primary"
             onClick={() => setPanel("save")}
-            disabled={busy}
+            disabled={busy || !canEdit || syncState === "conflict"}
           >
             <Save size={16} />
             <span>儲存版本</span>
@@ -491,6 +610,68 @@ export default function Editor() {
           }}
         />
       </header>
+      <div
+        className="sync-strip"
+        data-state={syncState}
+        role="status"
+        aria-live="polite"
+      >
+        <Cloud size={14} />
+        <span>
+          {syncState === "loading"
+            ? "正在載入共用路線…"
+            : syncState === "saving"
+              ? "正在自動儲存…"
+              : syncState === "dirty"
+                ? "有修改，等待自動儲存"
+                : syncState === "error" || syncState === "conflict"
+                  ? syncError
+                  : updated
+                    ? `已${canEdit ? "自動保存" : "載入共用路線"} · ${clock(updated)}`
+                    : "內建雙路線"}
+        </span>
+        {syncState === "error" && canEdit && (
+          <button onClick={() => void persist()}>重試儲存</button>
+        )}
+        {(syncState === "conflict" || syncState === "error") && (
+          <button
+            onClick={() => {
+              if (
+                dirty &&
+                !window.confirm(
+                  "請先匯出 JSON 備份；重新載入會捨棄此頁尚未保存的修改。確定載入最新共用路線？",
+                )
+              )
+                return;
+              location.reload();
+            }}
+          >
+            重新載入
+          </button>
+        )}
+        <small>
+          {publicEdit
+            ? "所有人可編輯 · 匯入資料會公開"
+            : canEdit
+              ? "編輯模式 · 所有人可瀏覽"
+              : "瀏覽模式"}
+        </small>
+        {canEdit && !publicEdit && (
+          <button
+            onClick={async () => {
+              try {
+                const link = await cloud.current.editingLink();
+                setEditingLink(link);
+                setPanel("editing-link");
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "無法複製編輯連結。");
+              }
+            }}
+          >
+            複製編輯連結
+          </button>
+        )}
+      </div>
       <section className="workspace">
         <aside className="sidebar">
           <div className="route-title">
@@ -571,6 +752,7 @@ export default function Editor() {
                   <span>依軌跡里程由近到遠</span>
                   <button
                     className="text-button"
+                    disabled={!canEdit}
                     onClick={() => {
                       setMode("waypoint");
                       setPanel(null);
@@ -632,6 +814,23 @@ export default function Editor() {
               </>
             ) : (
               <div className="versions">
+                <p className="hint">
+                  最新內容會自動保存；版本是額外保留的歷史快照。匯入及回復也會建立快照。
+                </p>
+                <label className="history-switch">
+                  版本來源
+                  <select
+                    value={legacy ? "legacy" : "shared"}
+                    onChange={(e) => {
+                      setLegacy(e.target.value === "legacy");
+                      setVersionError("");
+                      setVersions([]);
+                    }}
+                  >
+                    <option value="shared">全站共用版本</option>
+                    <option value="legacy">此瀏覽器的舊版私人版本</option>
+                  </select>
+                </label>
                 {versionError ? (
                   <div className="inline-error">
                     <p>{versionError}</p>
@@ -644,9 +843,14 @@ export default function Editor() {
                     <History size={28} />
                     <h3>保留每一次路線調整</h3>
                     <p>
-                      儲存第一個版本後，可在這裡載入、比較路線長度與建立分支。
+                      {legacy
+                        ? "此瀏覽器沒有舊版私人版本。"
+                        : "匯入路線或按「儲存版本」，即可在這裡回復與比較。"}
                     </p>
-                    <button onClick={() => setPanel("save")}>
+                    <button
+                      onClick={() => setPanel("save")}
+                      disabled={!canEdit}
+                    >
                       儲存第一個版本
                     </button>
                   </div>
@@ -664,8 +868,13 @@ export default function Editor() {
                         <small>來源版本 {v.parent.slice(0, 8)}</small>
                       )}
                       <div>
-                        <button onClick={() => void restore(v)} disabled={busy}>
-                          載入版本
+                        <button
+                          onClick={() => void restore(v)}
+                          disabled={
+                            busy || !canEdit || syncState === "conflict"
+                          }
+                        >
+                          {legacy ? "載入並共用" : "回復此版本"}
                         </button>
                         <button onClick={() => setCompare(v)}>比較里程</button>
                       </div>
@@ -717,6 +926,7 @@ export default function Editor() {
                   key={m.id}
                   title={m.label}
                   aria-pressed={mode === m.id}
+                  disabled={m.id !== "browse" && !canEdit}
                   className={mode === m.id ? "active" : ""}
                   onClick={() => setMode(m.id)}
                 >
@@ -729,7 +939,7 @@ export default function Editor() {
             <button
               className="icon-button"
               aria-label="復原"
-              disabled={!undoReady}
+              disabled={!undoReady || !canEdit}
               onClick={undo}
             >
               <Undo2 size={17} />
@@ -737,7 +947,7 @@ export default function Editor() {
             <button
               className="icon-button"
               aria-label="重做"
-              disabled={!redoReady}
+              disabled={!redoReady || !canEdit}
               onClick={redo}
             >
               <Redo2 size={17} />
@@ -807,6 +1017,7 @@ export default function Editor() {
                     className="icon-button"
                     aria-label={`移除參考路線 ${layer.name}`}
                     title="移除參考路線（可復原）"
+                    disabled={!canEdit}
                     onClick={() =>
                       edit({
                         ...route,
@@ -849,7 +1060,7 @@ export default function Editor() {
                 <button
                   className="text-button"
                   onClick={() => setPanel("simplify")}
-                  disabled={busy}
+                  disabled={busy || !canEdit}
                 >
                   簡化軌跡
                 </button>
@@ -922,6 +1133,8 @@ export default function Editor() {
         save={save}
         exportAs={exportAs}
         busy={busy}
+        canEdit={canEdit}
+        editingLink={editingLink}
         storageName={storageName}
       />
     </main>
