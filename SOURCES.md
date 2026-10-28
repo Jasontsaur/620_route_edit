@@ -44,3 +44,6 @@ FIT／TCX 匯出的是課程幾何及課程點；時間以 25km/h 推算，沒�
 
 
 2026-10-14 經使用者明確同意公開於網站與 GitHub，從原始 GPX 補回同一批3,892個保留軌跡點的實際紀錄時刻，以台灣時間（Asia/Taipei）的 HH:MM:SS 保存於 recordedTime。重新執行相同的瘦身條件以核對保留點索引，逐點確認座標、高度、分段與來源時刻一致，涵蓋停留時重複座標。僅公開鐘面時刻，不包含原始活動日期、完整時間戳或感測資料；不變更軌跡幾何及量測里程。
+
+
+2026-10-28 使用者另提供並授權讀取同次「雙塔2025.tcx」，且明確同意把新增速度與10秒平均功率連同既有點位公開於網站與GitHub。TCX與GPX的72,461筆原始時間戳和GPS座標逐筆完全一致；在原始取樣層計算10秒時間加權功率後，按原始索引補入相同3,892點，保持其GPS、高度、分段與時刻。所有3,892點有來源裝置速度；3,694點有完整功率窗口（含249點有效0W），198點資料不足。不將原始TCX、完整時間戳或其他感測資料納入公開內容。欄位定義參照 [Garmin FIT解碼說明](https://developer.garmin.com/fit/cookbook/decoding-activity-files/) 與 [Garmin ActivityExtension v2](https://www8.garmin.com/xmlschemas/ActivityExtensionv2.xsd)。

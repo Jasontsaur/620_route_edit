@@ -3,6 +3,9 @@ export type TrackPoint = {
   lng: number;
   ele?: number;
   recordedTime?: string;
+  recordedSpeedKmh?: number;
+  speedSource?: "device" | "gps";
+  recordedPower10sW?: number;
   segment?: number;
 };
 export type Waypoint = TrackPoint & {
@@ -98,6 +101,17 @@ export function validPoint(p: unknown): p is TrackPoint {
     Math.abs(v.lat) <= 90 &&
     Math.abs(v.lng) <= 180 &&
     (v.ele === undefined || Number.isFinite(v.ele)) &&
+    (v.recordedSpeedKmh === undefined ||
+      (typeof v.recordedSpeedKmh === "number" &&
+        Number.isFinite(v.recordedSpeedKmh) &&
+        v.recordedSpeedKmh >= 0)) &&
+    (v.recordedPower10sW === undefined ||
+      (typeof v.recordedPower10sW === "number" &&
+        Number.isFinite(v.recordedPower10sW) &&
+        v.recordedPower10sW >= 0)) &&
+    (v.speedSource === undefined ||
+      v.speedSource === "device" ||
+      v.speedSource === "gps") &&
     (v.recordedTime === undefined ||
       (typeof v.recordedTime === "string" &&
         /^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(v.recordedTime)))

@@ -1178,11 +1178,37 @@ test("520 default retains all 3892 validated clocks without publishing activity 
   assert.ok(
     ride.points.every((p) =>
       Object.keys(p).every((k) =>
-        ["lat", "lng", "ele", "segment", "recordedTime"].includes(k),
+        [
+          "lat",
+          "lng",
+          "ele",
+          "segment",
+          "recordedTime",
+          "recordedSpeedKmh",
+          "speedSource",
+          "recordedPower10sW",
+        ].includes(k),
       ),
     ),
   );
   assert.ok(Math.abs(distance(ride.points) - 516465.98) < 1);
+  assert.equal(
+    ride.points.filter((p) => p.recordedSpeedKmh !== undefined).length,
+    3892,
+  );
+  assert.ok(
+    ride.points.every(
+      (p) => p.recordedSpeedKmh === undefined || p.speedSource === "device",
+    ),
+  );
+  assert.equal(
+    ride.points.filter((p) => p.recordedPower10sW !== undefined).length,
+    3694,
+  );
+  assert.equal(
+    ride.points.filter((p) => p.recordedPower10sW === 0).length,
+    249,
+  );
   const official = validateRoute(
     JSON.parse(await readFile("public/data/twb-2026.json", "utf8")),
   );
@@ -1198,4 +1224,195 @@ test("520 default retains all 3892 validated clocks without publishing activity 
     ride.points[0].recordedTime,
   );
   assert.ok(JSON.stringify(initial).length < 1800000);
+});
+
+test("10s power uses a full trailing time window, includes zero watts and weights irregular intervals", async () => {
+  const { deriveRecordingMetrics } = await import("../lib/record-metrics");
+  const make = (seconds: number, powerWatts?: number) => ({
+    lat: 23,
+    lng: 120 + seconds * 0.00001,
+    timestampMs: Date.UTC(2025, 0, 1) + seconds * 1000,
+    ...(powerWatts === undefined ? {} : { powerWatts }),
+  });
+  const regular = deriveRecordingMetrics(
+    Array.from({ length: 21 }, (_, i) => make(i, i % 2 === 0 ? 0 : 100)),
+  );
+  assert.equal(regular[9].recordedPower10sW, undefined);
+  assert.equal(regular[10].recordedPower10sW, 50);
+  assert.equal(regular[20].recordedPower10sW, 50);
+  const zeros = deriveRecordingMetrics(
+    Array.from({ length: 11 }, (_, i) => make(i, 0)),
+  );
+  assert.equal(zeros[10].recordedPower10sW, 0);
+  const uneven = deriveRecordingMetrics([
+    make(0, 0),
+    make(1, 100),
+    make(3, 200),
+    make(4, 300),
+    make(6, 400),
+    make(8, 500),
+    make(10, 600),
+  ]);
+  assert.equal(uneven.at(-1)!.recordedPower10sW, 380);
+  const trimmed = deriveRecordingMetrics([
+    make(0, 0),
+    make(2, 100),
+    make(4, 200),
+    make(6, 300),
+    make(8, 400),
+    make(10, 500),
+    make(11, 600),
+  ]);
+  assert.equal(trimmed.at(-1)!.recordedPower10sW, 350);
+});
+
+test("missing power, pauses, GPS segments and timestamp gaps never become zero or bridge windows", async () => {
+  const { deriveRecordingMetrics } = await import("../lib/record-metrics");
+  const samples = Array.from({ length: 31 }, (_, i) => ({
+    lat: 23,
+    lng: 120,
+    timestampMs: Date.UTC(2025, 0, 1) + i * 1000,
+    powerWatts: 200,
+  }));
+  const missing = deriveRecordingMetrics(
+    samples.map((s, i) => (i === 15 ? { ...s, powerWatts: undefined } : s)),
+  );
+  assert.equal(missing[14].recordedPower10sW, 200);
+  assert.equal(missing[15].recordedPower10sW, undefined);
+  assert.equal(missing[24].recordedPower10sW, undefined);
+  assert.equal(missing[25].recordedPower10sW, 200);
+  const paused = deriveRecordingMetrics(
+    samples.map((s, i) => ({ ...s, timerRunning: i !== 15 })),
+  );
+  assert.equal(paused[16].recordedPower10sW, undefined);
+  assert.equal(paused[25].recordedPower10sW, undefined);
+  assert.equal(paused[26].recordedPower10sW, 200);
+  const gap = deriveRecordingMetrics(
+    samples.filter((_, i) => i < 12 || i >= 16),
+  );
+  assert.equal(
+    gap.find((p) => p.recordedTime === "08:00:16")!.recordedPower10sW,
+    undefined,
+  );
+  const segmented = deriveRecordingMetrics(
+    samples.map((s, i) => ({ ...s, segment: i < 15 ? 0 : 1 })),
+  );
+  assert.equal(segmented[15].recordedPower10sW, undefined);
+  assert.equal(segmented[25].recordedPower10sW, 200);
+  const noPower = deriveRecordingMetrics(
+    samples.map((s) => ({ ...s, powerWatts: undefined })),
+  );
+  assert.ok(noPower.every((p) => p.recordedPower10sW === undefined));
+});
+
+test("speed prefers recorded sensors, labels GPS estimates and never divides across pauses or dates", async () => {
+  const { deriveRecordingMetrics } = await import("../lib/record-metrics");
+  const start = Date.UTC(2025, 0, 1, 15, 59, 59);
+  const samples = [
+    { lat: 23, lng: 120, timestampMs: start, speedMps: 0 },
+    { lat: 23, lng: 120.0001, timestampMs: start + 1000 },
+    { lat: 23, lng: 120.0002, timestampMs: start + 2000, speedMps: 10 },
+    { lat: 23, lng: 120.0003, timestampMs: start + 22000 },
+    { lat: 23, lng: 120.0004, timestampMs: start + 23000, timerRunning: false },
+  ];
+  const result = deriveRecordingMetrics(samples);
+  assert.equal(result[0].recordedSpeedKmh, 0);
+  assert.equal(result[0].speedSource, "device");
+  assert.equal(result[1].speedSource, "gps");
+  assert.ok(
+    result[1].recordedSpeedKmh! > 30 && result[1].recordedSpeedKmh! < 40,
+  );
+  assert.equal(result[1].recordedTime, "00:00:00");
+  assert.equal(result[2].recordedSpeedKmh, 36);
+  assert.equal(result[2].speedSource, "device");
+  assert.equal(result[3].recordedSpeedKmh, undefined);
+  assert.equal(result[4].recordedSpeedKmh, undefined);
+  assert.ok(
+    result.every(
+      (p) =>
+        !("timestampMs" in p) && !("powerWatts" in p) && !("speedMps" in p),
+    ),
+  );
+  const route = {
+    name: "Metrics",
+    points: result,
+    provenance: "test",
+    waypoints: [],
+  };
+  assert.equal(
+    validateRoute(JSON.parse(JSON.stringify(route))).points[2].recordedSpeedKmh,
+    36,
+  );
+  for (const invalid of [
+    { recordedPower10sW: -1 },
+    { recordedSpeedKmh: NaN },
+    { speedSource: "guessed" },
+  ])
+    assert.throws(() =>
+      validateRoute({
+        ...route,
+        points: [{ ...result[0], ...invalid }, result[1]],
+      }),
+    );
+});
+
+test("FIT activities import measured speed and pre-simplification 10s power without treating course timing as recording time", async () => {
+  const encoder = new Encoder();
+  const write = (n: number, m: Record<string, unknown>) =>
+    encoder.onMesg(n, m as import("@garmin/fitsdk").Mesg);
+  write(Profile.MesgNum.FILE_ID, {
+    type: "activity",
+    manufacturer: "development",
+  });
+  const start = new Date("2025-01-01T00:00:00Z");
+  for (let i = 0; i <= 20; i++)
+    write(Profile.MesgNum.RECORD, {
+      timestamp: new Date(start.getTime() + i * 1000),
+      positionLat: Math.round((23 * 2 ** 31) / 180),
+      positionLong: Math.round(((120 + i * 0.00001) * 2 ** 31) / 180),
+      enhancedSpeed: 10,
+      power: i % 2 === 0 ? 0 : 200,
+    });
+  const result = await importFile(file(encoder.close(), "power.fit"));
+  assert.equal(result.points[10].recordedPower10sW, 100);
+  assert.equal(result.points[10].recordedSpeedKmh, 36);
+  assert.equal(result.points[10].speedSource, "device");
+  assert.equal(result.points[10].recordedTime, "08:00:10");
+  const course = await importFile(file(await exportFit(route), "planned.fit"));
+  assert.ok(
+    course.points.every(
+      (p) => p.recordedTime === undefined && p.recordedPower10sW === undefined,
+    ),
+  );
+});
+
+test("TCX activities accept only Garmin sensor namespaces; GPX derives speed from raw timed samples", async () => {
+  const records = Array.from(
+    { length: 12 },
+    (_, i) =>
+      "<Trackpoint><Time>2025-01-01T00:00:" +
+      String(i).padStart(2, "0") +
+      "Z</Time><Position><LatitudeDegrees>23</LatitudeDegrees><LongitudeDegrees>" +
+      String(120 + i * 0.00001) +
+      "</LongitudeDegrees></Position><Extensions><a:TPX><a:Speed>5</a:Speed><a:Watts>" +
+      String(i % 2 === 0 ? 0 : 200) +
+      "</a:Watts></a:TPX><bad:TPX><bad:Speed>999</bad:Speed><bad:Watts>999</bad:Watts></bad:TPX></Extensions></Trackpoint>",
+  ).join("");
+  const xml =
+    '<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2" xmlns:a="http://www.garmin.com/xmlschemas/ActivityExtension/v2" xmlns:bad="urn:untrusted"><Activities><Activity Sport="Biking"><Lap><Track>' +
+    records +
+    "</Track></Lap></Activity></Activities></TrainingCenterDatabase>";
+  const tcx = await importFile(file(xml, "power.tcx"));
+  assert.equal(tcx.points[10].recordedSpeedKmh, 18);
+  assert.equal(tcx.points[10].recordedPower10sW, 100);
+  assert.equal(tcx.points[10].recordedTime, "08:00:10");
+  const gpx = await importFile(
+    file(
+      '<gpx><trk><trkseg><trkpt lat="23" lon="120"><time>2025-01-01T00:00:00Z</time></trkpt><trkpt lat="23" lon="120.0001"><time>2025-01-01T00:00:01Z</time></trkpt></trkseg></trk></gpx>',
+      "timed.gpx",
+    ),
+  );
+  assert.equal(gpx.points[1].speedSource, "gps");
+  assert.ok(gpx.points[1].recordedSpeedKmh! > 30);
+  assert.equal(gpx.points[1].recordedPower10sW, undefined);
 });

@@ -1514,3 +1514,22 @@ code {
   font-size: 11px;
   color: var(--muted);
 }
+
+.record-metrics {
+  margin: 6px 0;
+  font-size: 12px;
+}
+.record-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+.record-metrics dt {
+  color: var(--muted);
+}
+.record-metrics dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

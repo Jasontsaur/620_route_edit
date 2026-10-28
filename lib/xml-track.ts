@@ -1,12 +1,16 @@
 import { SaxesParser } from "saxes";
-import { validPoint, type TrackPoint, type Waypoint } from "./route";
+import { validPoint, type Waypoint } from "./route";
 import type { ImportProgress } from "./compact-import";
+import { deriveRecordingMetrics, type RecordingSample } from "./record-metrics";
 type Candidate = {
   tag: string;
   depth: number;
   lat: number;
   lng: number;
   ele?: number;
+  timestampMs?: number;
+  speedMps?: number;
+  powerWatts?: number;
   name: string;
   note: string;
   hasPosition: boolean;
@@ -18,7 +22,7 @@ export async function readXmlTrack(
   progress?: (p: ImportProgress) => void,
 ) {
   const parser = new SaxesParser({ xmlns: true });
-  const stack: { name: string; text: string }[] = [];
+  const stack: { name: string; text: string; uri: string }[] = [];
   const capture = new Set([
     "ele",
     "AltitudeMeters",
@@ -28,9 +32,13 @@ export async function readXmlTrack(
     "Name",
     "desc",
     "Notes",
+    "time",
+    "Time",
+    "Speed",
+    "Watts",
   ]);
-  const tracks: TrackPoint[] = [],
-    routes: TrackPoint[] = [],
+  const tracks: RecordingSample[] = [],
+    routes: RecordingSample[] = [],
     waypoints: Waypoint[] = [];
   let candidate: Candidate | undefined,
     skipDepth = 0,
@@ -49,9 +57,17 @@ export async function readXmlTrack(
     throw Error("XML 格式不正確，請重新匯出紀錄。");
   });
   parser.on("opentag", (tag) => {
-    stack.push({ name: tag.local, text: "" });
+    stack.push({ name: tag.local, text: "", uri: tag.uri });
     if (skipDepth) return;
-    if (tag.local.toLowerCase() === "extensions") {
+    if (
+      format === "tcx" &&
+      stack.slice(0, -1).some((t) => t.name.toLowerCase() === "extensions") &&
+      tag.uri !== "http://www.garmin.com/xmlschemas/ActivityExtension/v2"
+    ) {
+      skipDepth = stack.length;
+      return;
+    }
+    if (tag.local.toLowerCase() === "extensions" && format !== "tcx") {
       skipDepth = stack.length;
       return;
     }
@@ -100,6 +116,39 @@ export async function readXmlTrack(
     }
     if (candidate && stack.length >= candidate.depth) {
       const v = current.text;
+      const activityPoint =
+        format === "gpx"
+          ? candidate.tag === "trkpt"
+          : stack.some((t) => t.name === "Activity");
+      if (
+        activityPoint &&
+        (current.name === "time" || current.name === "Time")
+      ) {
+        if (
+          /(?:Z|[+-]\d{2}:\d{2})$/.test(v.trim()) &&
+          Number.isFinite(Date.parse(v))
+        )
+          candidate.timestampMs = Date.parse(v);
+      }
+      if (
+        activityPoint &&
+        format === "tcx" &&
+        current.uri === "http://www.garmin.com/xmlschemas/ActivityExtension/v2"
+      ) {
+        if (
+          current.name === "Speed" &&
+          Number.isFinite(number(v)) &&
+          number(v) >= 0
+        )
+          candidate.speedMps = number(v);
+        if (
+          current.name === "Watts" &&
+          Number.isFinite(number(v)) &&
+          number(v) >= 0
+        )
+          candidate.powerWatts = number(v);
+      }
+      if (stack.some((t) => t.name.toLowerCase() === "extensions")) return;
       if (current.name === "ele" || current.name === "AltitudeMeters") {
         const ele = number(v);
         if (Number.isFinite(ele)) candidate.ele = ele;
@@ -167,6 +216,9 @@ export async function readXmlTrack(
             ? routeSegment
             : trackSegment,
       ...(c.ele !== undefined ? { ele: c.ele } : {}),
+      ...(c.timestampMs !== undefined ? { timestampMs: c.timestampMs } : {}),
+      ...(c.speedMps !== undefined ? { speedMps: c.speedMps } : {}),
+      ...(c.powerWatts !== undefined ? { powerWatts: c.powerWatts } : {}),
     };
     if (!validPoint(p) || p.segment < 0)
       throw Error("軌跡含無效座標或缺少 Track／trkseg。");
@@ -200,7 +252,7 @@ export async function readXmlTrack(
     reader.releaseLock();
   }
   return {
-    points: tracks.length ? tracks : routes,
+    points: tracks.length ? deriveRecordingMetrics(tracks) : routes,
     waypoints,
     name: format === "tcx" ? courseName : tracks.length ? trackName : routeName,
   };

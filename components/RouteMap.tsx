@@ -80,6 +80,9 @@ export default function RouteMap(props: Props) {
       y: number;
       name: string;
       clock: string;
+      speedKmh?: number;
+      speedSource?: "device" | "gps";
+      power10sW?: number;
       pinned: boolean;
     } | null>(null);
   const timeFrame = useRef<number | null>(null);
@@ -127,7 +130,7 @@ export default function RouteMap(props: Props) {
       const y = Math.max(
         8,
         Math.min(
-          bounds.height - 84,
+          bounds.height - 145,
           (mouse?.clientY ?? bounds.top + bounds.height / 2) - bounds.top + 14,
         ),
       );
@@ -138,7 +141,16 @@ export default function RouteMap(props: Props) {
         pinnedTimeTip.current = Boolean(pinned && point?.recordedTime);
         setRecordTip(
           point?.recordedTime
-            ? { x, y, name, clock: point.recordedTime, pinned }
+            ? {
+                x,
+                y,
+                name,
+                clock: point.recordedTime,
+                speedKmh: point.recordedSpeedKmh,
+                speedSource: point.speedSource,
+                power10sW: point.recordedPower10sW,
+                pinned,
+              }
             : null,
         );
       };
@@ -714,6 +726,26 @@ export default function RouteMap(props: Props) {
         >
           <small>{recordTip.name}</small>
           <strong>{recordTip.clock}</strong>
+          <dl className="record-metrics">
+            <div>
+              <dt>
+                速度{recordTip.speedSource === "gps" ? "（GPS估算）" : ""}
+              </dt>
+              <dd>
+                {recordTip.speedKmh === undefined
+                  ? "無速度資料"
+                  : recordTip.speedKmh.toFixed(1) + " km/h"}
+              </dd>
+            </div>
+            <div>
+              <dt>10秒平均功率</dt>
+              <dd>
+                {recordTip.power10sW === undefined
+                  ? "資料不足"
+                  : Math.round(recordTip.power10sW) + " W"}
+              </dd>
+            </div>
+          </dl>
           <span>最近紀錄點 · 台灣時間</span>
         </div>
       )}

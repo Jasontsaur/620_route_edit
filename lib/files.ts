@@ -9,6 +9,11 @@ import {
 } from "./route";
 import { compactImportedRoute, type ImportProgress } from "./compact-import";
 import { readXmlTrack } from "./xml-track";
+import {
+  deriveRecordingMetrics,
+  fitEpochMs,
+  type RecordingSample,
+} from "./record-metrics";
 const xml = (s: unknown) =>
   String(s ?? "").replace(
     /[<>&"']/g,
@@ -52,24 +57,65 @@ export async function importFile(
     let segment = 0,
       gap = false,
       sawValid = false;
-    points = rec.flatMap((r) => {
-      if (!Number.isFinite(r.positionLat) || !Number.isFinite(r.positionLong)) {
+    const activity = messages.fileIdMesgs?.[0]?.type === "activity";
+    const events = (messages.eventMesgs ?? [])
+      .filter((e) => e.event === "timer" && typeof e.timestamp === "number")
+      .sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+    let eventIndex = 0,
+      timerRunning = true;
+    const raw: RecordingSample[] = rec.map((r) => {
+      while (
+        eventIndex < events.length &&
+        Number(events[eventIndex].timestamp) <= Number(r.timestamp)
+      ) {
+        const event = events[eventIndex++];
+        if (event.eventType === "start") timerRunning = true;
+        else if (String(event.eventType).startsWith("stop"))
+          timerRunning = false;
+      }
+      const speed = Number.isFinite(r.enhancedSpeed)
+        ? r.enhancedSpeed
+        : r.speed;
+      return {
+        lat:
+          typeof r.positionLat === "number"
+            ? (r.positionLat * 180) / 2 ** 31
+            : NaN,
+        lng:
+          typeof r.positionLong === "number"
+            ? (r.positionLong * 180) / 2 ** 31
+            : NaN,
+        ...(Number.isFinite(r.enhancedAltitude ?? r.altitude)
+          ? { ele: Number(r.enhancedAltitude ?? r.altitude) }
+          : {}),
+        ...(activity
+          ? {
+              ...(typeof r.timestamp === "number"
+                ? { timestampMs: fitEpochMs + r.timestamp * 1000 }
+                : {}),
+              ...(typeof speed === "number" ? { speedMps: speed } : {}),
+              ...(typeof r.power === "number" ? { powerWatts: r.power } : {}),
+              timerRunning,
+            }
+          : {}),
+      };
+    });
+    const metricPoints = activity
+      ? deriveRecordingMetrics(raw)
+      : raw.map((p) => ({
+          lat: p.lat,
+          lng: p.lng,
+          ...(p.ele === undefined ? {} : { ele: p.ele }),
+        }));
+    points = metricPoints.flatMap((p) => {
+      if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) {
         gap = true;
         return [];
       }
       if (gap && sawValid) segment++;
       gap = false;
       sawValid = true;
-      return [
-        {
-          lat: (Number(r.positionLat) * 180) / 2 ** 31,
-          lng: (Number(r.positionLong) * 180) / 2 ** 31,
-          segment,
-          ...(Number.isFinite(r.enhancedAltitude ?? r.altitude)
-            ? { ele: Number(r.enhancedAltitude ?? r.altitude) }
-            : {}),
-        },
-      ];
+      return [{ ...p, segment }];
     });
     waypoints = (messages.coursePointMesgs ?? [])
       .filter(
@@ -96,7 +142,7 @@ export async function importFile(
       name,
       points,
       waypoints,
-      provenance: `使用者匯入 ${file.name}；軌跡幾何，不含原始騎乘感測紀錄`,
+      provenance: `使用者匯入 ${file.name}；保留可用的紀錄時刻、速度及10秒平均功率，不保留原始日期、心率等其他感測紀錄`,
     },
     progress,
   );
