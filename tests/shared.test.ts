@@ -289,6 +289,47 @@ test("write access requires an editing link, existing session, same origin and C
     false,
   );
 });
+test("default browser fetch keeps its global receiver for load, access and saving", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = async function (this: unknown, url, init) {
+    // Window.fetch rejects a class instance as its receiver in browsers.
+    if (this !== globalThis) throw new TypeError("Illegal invocation");
+    calls.push(String(url));
+    if (String(url).endsWith("/access")) return Response.json({ ok: true });
+    if (init?.method === "POST")
+      return Response.json({
+        revision: JSON.parse(String(init.body)).operationId,
+        updated: "2026-10-28T00:00:00Z",
+        versionId: "v",
+      });
+    return Response.json({
+      route,
+      revision: null,
+      updated: null,
+      versionId: null,
+      csrf: "csrf",
+      canEdit: true,
+      publicEdit: true,
+    });
+  };
+  try {
+    const client = new SharedRouteClient();
+    const loaded = await client.load("editor-link");
+    assert.equal(loaded.canEdit, true);
+    assert.equal(loaded.publicEdit, true);
+    assert.deepEqual(loaded.route, route);
+    await client.save(route, "import");
+    assert.equal(client.pending, null);
+    assert.deepEqual(calls, [
+      "/api/shared-route/access",
+      "/api/shared-route",
+      "/api/shared-route",
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 test("client first load only reads, retry resends identical failed operation before newer edits", async () => {
   const bodies: string[] = [];
   let loseResponse = true;

@@ -29,7 +29,11 @@ export class SharedRouteClient {
   csrf = "";
   pending: Pending | null = null;
   private flight: Promise<Ack> | null = null;
-  constructor(private fetcher: typeof fetch = fetch) {}
+  constructor(
+    // Native Window.fetch must receive the browser global as its receiver.
+    private fetcher: typeof fetch = (input, init) =>
+      globalThis.fetch(input, init),
+  ) {}
   async load(token?: string): Promise<SharedLoad> {
     if (token) {
       const r = await this.fetcher("/api/shared-route/access", {
