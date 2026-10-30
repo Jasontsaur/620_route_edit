@@ -2,6 +2,12 @@
 /* eslint-disable react-hooks/exhaustive-deps -- Map lifecycle follows key/route/mode; event callbacks read current props through a ref. */
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { LocateFixed, LoaderCircle, X } from "lucide-react";
+import {
+  DeviceLocationTracker,
+  locationOff,
+  type LocationState,
+} from "../lib/device-location";
 import {
   groups,
   activeRouteColor,
@@ -68,6 +74,7 @@ export default function RouteMap(props: Props) {
     adapter = useRef<"google" | "osm">("osm"),
     L = useRef<typeof Leaflet | null>(null),
     layers = useRef<any[]>([]),
+    locationLayers = useRef<any[]>([]),
     lastViewport = useRef<MapViewport | null>(null),
     handles = useRef<any[]>([]),
     [ready, setReady] = useState(0),
@@ -75,6 +82,7 @@ export default function RouteMap(props: Props) {
       "roadmap",
     ),
     [provider, setProvider] = useState("載入地圖中…"),
+    [location, setLocation] = useState<LocationState>(locationOff),
     [recordTip, setRecordTip] = useState<{
       x: number;
       y: number;
@@ -87,6 +95,71 @@ export default function RouteMap(props: Props) {
     } | null>(null);
   const timeFrame = useRef<number | null>(null);
   const pinnedTimeTip = useRef(false);
+  const locationTracker = useRef<DeviceLocationTracker | null>(null);
+  const centerLocation = useRef(false);
+  const tracking =
+    location.status === "requesting" || location.status === "active";
+  function centerOnLocation() {
+    const fix = location.fix;
+    if (!map.current || !fix) return;
+    const zoom =
+      fix.accuracy <= 100
+        ? 16
+        : fix.accuracy <= 1000
+          ? 14
+          : fix.accuracy <= 10000
+            ? 11
+            : 8;
+    if (adapter.current === "google") {
+      map.current.panTo({ lat: fix.lat, lng: fix.lng });
+      map.current.setZoom(zoom);
+    } else map.current.setView([fix.lat, fix.lng], zoom);
+  }
+  function locate() {
+    if (location.fix) {
+      centerOnLocation();
+      return;
+    }
+    if (tracking) return;
+    if (!window.isSecureContext) {
+      setLocation({
+        status: "error",
+        fix: null,
+        message: "定位需要安全連線，請使用本網站的 HTTPS 網址。",
+      });
+      return;
+    }
+    if (!navigator.geolocation) {
+      setLocation({
+        status: "error",
+        fix: null,
+        message:
+          "此瀏覽器不支援定位，請使用 Safari、Chrome 或 Edge，並開啟系統定位。",
+      });
+      return;
+    }
+    if (!locationTracker.current)
+      locationTracker.current = new DeviceLocationTracker(
+        navigator.geolocation,
+        setLocation,
+      );
+    centerLocation.current = true;
+    locationTracker.current.start();
+  }
+  function stopLocation() {
+    centerLocation.current = false;
+    if (locationTracker.current) locationTracker.current.stop();
+    else setLocation(locationOff);
+  }
+  useEffect(() => {
+    const pageHidden = () => locationTracker.current?.stop();
+    window.addEventListener("pagehide", pageHidden);
+    return () => {
+      window.removeEventListener("pagehide", pageHidden);
+      locationTracker.current?.dispose();
+      locationTracker.current = null;
+    };
+  }, []);
   useEffect(() => {
     state.current = props;
   }, [props]);
@@ -480,6 +553,7 @@ export default function RouteMap(props: Props) {
       if (map.current) {
         clear(layers);
         clear(handles);
+        clear(locationLayers);
         if (adapter.current === "osm") {
           map.current.stop();
           map.current.remove();
@@ -686,6 +760,84 @@ export default function RouteMap(props: Props) {
       map.current.setMapTypeId(mapType);
     }
   }, [mapType, ready]);
+  useEffect(() => {
+    if (!ready || !map.current) return;
+    clear(locationLayers);
+    const fix = location.fix;
+    if (!fix) return;
+    if (adapter.current === "google") {
+      const google = window.google.maps;
+      const position = { lat: fix.lat, lng: fix.lng };
+      locationLayers.current = [
+        new google.Circle({
+          map: map.current,
+          center: position,
+          radius: fix.accuracy,
+          strokeColor: "#087be6",
+          strokeOpacity: 0.5,
+          strokeWeight: 1,
+          fillColor: "#1689ef",
+          fillOpacity: 0.13,
+          clickable: false,
+          zIndex: 1000,
+        }),
+        new google.Marker({
+          map: map.current,
+          position,
+          title: "我的位置",
+          clickable: false,
+          draggable: false,
+          zIndex: 1001,
+          icon: {
+            path: google.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#087be6",
+            fillOpacity: 1,
+            strokeColor: "#fff",
+            strokeWeight: 3,
+          },
+        }),
+      ];
+    } else {
+      const leaflet = L.current!;
+      if (!map.current.getPane("device-location")) {
+        const pane = map.current.createPane("device-location");
+        pane.style.zIndex = "650";
+        pane.style.pointerEvents = "none";
+      }
+      const position: [number, number] = [fix.lat, fix.lng];
+      locationLayers.current = [
+        leaflet
+          .circle(position, {
+            pane: "device-location",
+            radius: fix.accuracy,
+            color: "#087be6",
+            weight: 1,
+            opacity: 0.5,
+            fillColor: "#1689ef",
+            fillOpacity: 0.13,
+            interactive: false,
+          })
+          .addTo(map.current),
+        leaflet
+          .circleMarker(position, {
+            pane: "device-location",
+            radius: 8,
+            color: "#fff",
+            weight: 3,
+            fillColor: "#087be6",
+            fillOpacity: 1,
+            interactive: false,
+          })
+          .addTo(map.current),
+      ];
+    }
+    if (centerLocation.current) {
+      centerLocation.current = false;
+      centerOnLocation();
+    }
+    return () => clear(locationLayers);
+  }, [location.fix, ready]);
   return (
     <div
       className="map-wrap"
@@ -696,6 +848,65 @@ export default function RouteMap(props: Props) {
         className={"map mode-" + props.mode}
         aria-label="路線互動地圖"
       />
+      <section
+        className="location-control"
+        data-state={location.status}
+        aria-label="裝置定位"
+      >
+        <div className="location-buttons">
+          <button
+            onClick={locate}
+            disabled={!ready || location.status === "requesting"}
+            aria-label={location.fix ? "回到我的位置" : "我的位置"}
+            title={location.fix ? "回到我的位置" : "取得此裝置目前位置"}
+          >
+            {location.status === "requesting" ? (
+              <LoaderCircle size={18} className="location-spinner" />
+            ) : (
+              <LocateFixed size={18} />
+            )}
+            <span>
+              {location.status === "requesting"
+                ? "定位中…"
+                : location.fix
+                  ? "回到定位"
+                  : "我的位置"}
+            </span>
+          </button>
+          {(tracking || location.status === "error") && (
+            <button
+              className="location-stop"
+              onClick={stopLocation}
+              aria-label={tracking ? "停止定位" : "關閉定位提示"}
+              title={tracking ? "停止定位" : "關閉提示"}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+        {location.status !== "off" && (
+          <div className="location-status" role="status" aria-live="polite">
+            {location.fix ? (
+              <>
+                <strong>
+                  精確度 ±{Math.round(location.fix.accuracy).toLocaleString()}{" "}
+                  公尺
+                </strong>
+                <span>
+                  更新{" "}
+                  {new Date(location.fix.timestamp).toLocaleTimeString(
+                    "zh-TW",
+                    { hour12: false },
+                  )}
+                </span>
+                <small>藍點為裝置位置 · 僅此裝置顯示</small>
+              </>
+            ) : (
+              <span>{location.message}</span>
+            )}
+          </div>
+        )}
+      </section>
       {provider === "Google Maps" && (
         <label className="map-type-control">
           <select

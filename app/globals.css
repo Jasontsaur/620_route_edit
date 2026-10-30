@@ -1498,6 +1498,83 @@ code {
   padding: 4px;
   box-shadow: 0 3px 20px #173f551a;
 }
+.location-control {
+  position: absolute;
+  top: 84px;
+  right: 22px;
+  z-index: 5;
+  max-width: min(250px, calc(100% - 32px));
+}
+.map-wrap[data-provider="google"] .location-control {
+  top: 144px;
+}
+.location-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.location-buttons button {
+  min-height: 42px;
+  box-shadow: 0 3px 20px #173f551a;
+}
+.location-control[data-state="active"] .location-buttons button:first-child {
+  color: #086ac1;
+  background: #f1f8ff;
+}
+.location-buttons .location-stop {
+  padding: 9px;
+}
+.location-status {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #fffffff2;
+  border-radius: 7px;
+  box-shadow: 0 3px 20px #173f551a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.location-status strong,
+.location-status span,
+.location-status small {
+  display: block;
+}
+.location-status small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.location-control[data-state="error"] .location-status {
+  background: #fff0e9;
+  color: #963d27;
+}
+.location-spinner {
+  animation: location-spin 1s linear infinite;
+}
+@keyframes location-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .location-spinner {
+    animation: none;
+  }
+}
+@media (max-width: 680px), (max-width: 950px) and (pointer: coarse) {
+  .location-control {
+    top: 68px;
+    right: 8px;
+    max-width: min(220px, calc(100% - 16px));
+  }
+  .map-wrap[data-provider="google"] .location-control {
+    top: 124px;
+  }
+  .location-buttons button {
+    min-height: 44px;
+    padding: 8px;
+    font-size: 12px;
+    gap: 5px;
+  }
+}
 .map-type-control select {
   min-width: 108px;
   min-height: 40px;

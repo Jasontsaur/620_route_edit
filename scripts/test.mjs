@@ -17,6 +17,8 @@ for (const source of [
   "lib/shared-access.ts",
   "lib/shared-store.ts",
   "lib/shared-client.ts",
+  "lib/device-location.ts",
+  "tests/location.test.ts",
   "tests/shared.test.ts",
   "tests/route.test.ts",
 ]) {
@@ -28,7 +30,7 @@ for (const source of [
       },
     })
     .outputText.replace(
-      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|mileage|map-interaction|record-time|record-metrics|version-owner|maps-settings|shared-access|shared-store|shared-client|compact-import|xml-track))\1/g,
+      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|mileage|map-interaction|record-time|record-metrics|version-owner|maps-settings|shared-access|shared-store|shared-client|device-location|compact-import|xml-track))\1/g,
       "$1$2.mjs$1",
     );
   const target = ".sites-runtime/test/" + source.replace(/\.ts$/, ".mjs");
@@ -41,6 +43,7 @@ const result = spawnSync(
     "--test",
     ".sites-runtime/test/tests/route.test.mjs",
     ".sites-runtime/test/tests/shared.test.mjs",
+    ".sites-runtime/test/tests/location.test.mjs",
   ],
   { stdio: "inherit" },
 );
