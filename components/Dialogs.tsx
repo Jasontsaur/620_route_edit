@@ -462,6 +462,12 @@ export default function Dialogs({
           <>
             <h2>官方資料與路線來源</h2>
             <p>
+              目前里程基準為「{mileageReference.name}」，全長{" "}
+              {(distance(mileageReference.points) / 1000).toFixed(2)} km。
+              採用使用者提供的 1103 淡江大橋新版 GPX 完整軌跡，自起點 0 km
+              計算。
+            </p>
+            <p>
               資料查核：2026/10/08。TWB 活動為 2026/11/06 18:00 至 11/08
               04:00（台灣時間），限時 34 小時。
             </p>
@@ -480,8 +486,8 @@ export default function Dialogs({
               </div>
             </div>
             <p>
-              基準軌跡取自 TWB 官方頁面嵌入的 Strava 路線（2026/09/29
-              建立），原始 33,146 點，編輯版採 4m
+              2026/10/08 查核的舊版官方軌跡取自 TWB 頁面嵌入的 Strava
+              路線（2026/09/29 建立），原始 33,146 點，編輯版採 4m
               幾何簡化。官方文字目前經關渡大橋，仍標示為暫定路線；文字、站點表與嵌入軌跡有差異，以最終公告為準。
             </p>
             <p>
@@ -495,7 +501,7 @@ export default function Dialogs({
                 官方嵌入 Strava 路線 <ExternalLink size={14} />
               </a>
               <a href="/data/twb-2026-original.gpx" download>
-                下載未簡化基準 GPX <Download size={14} />
+                下載舊版官方 GPX（歷史資料） <Download size={14} />
               </a>
             </div>
             <p className="hint">目前來源：{route.provenance}</p>

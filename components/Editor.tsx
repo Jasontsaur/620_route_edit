@@ -163,7 +163,7 @@ export default function Editor() {
 
     Promise.all(
       [
-        { url: "/data/twb-2026.json", label: "TWB 四極點620" },
+        { url: "/data/twb-2026-1103.json", label: "四極點620-1103淡江大橋" },
         { url: "/data/520-activity-slim.json", label: "520 騎乘紀錄（瘦身）" },
       ].map(async ({ url, label }) => {
         const response = await fetch(url);

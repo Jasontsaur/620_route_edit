@@ -47,17 +47,25 @@ export function builtInRoute(
 ): RouteData {
   const official = validateRoute(officialInput),
     ride = validateRoute(rideInput);
+  // Keep the two-layer fallback within the shared-save size limit. Mileage
+  // calculations receive the separate, complete reference in the editor.
+  const referencePoints =
+    official.points.length > 12000
+      ? simplify(official.points, 4)
+      : official.points;
   return validateRoute({
     ...ride,
     waypoints: [
       ...new Map(
-        [...checkpointSeed.map((w) => ({ ...w })), ...ride.waypoints].map(
-          (w) => [w.id, w],
-        ),
+        [
+          ...checkpointSeed.map((w) => ({ ...w })),
+          ...official.waypoints,
+          ...ride.waypoints,
+        ].map((w) => [w.id, w]),
       ).values(),
     ],
     overlays: [
-      { id: "twb-2026-default", name: official.name, points: official.points },
+      { id: "twb-2026-default", name: official.name, points: referencePoints },
     ],
   });
 }

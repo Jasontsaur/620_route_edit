@@ -627,6 +627,80 @@ test("official baseline is valid, has 8 checkpoints and honest measured length",
   assert.equal(checkpointSeed.at(-1)!.officialKm, 615);
 });
 
+test("1103 GPX reference keeps the complete new origin, distance, milestones and elevation alignment", async () => {
+  const reference = validateRoute(
+    JSON.parse(await readFile("public/data/twb-2026-1103.json", "utf8")),
+  );
+  assert.equal(reference.name, "四極點620-1103淡江大橋");
+  assert.equal(reference.points.length, 18605);
+  assert.equal(reference.waypoints.length, 20);
+  assert.ok(Math.abs(distance(reference.points) - 592611.2136798931) < 0.001);
+  assert.equal(reference.points[0].lat, 25.01623610034585);
+  assert.equal(reference.points.at(-1)!.lat, 21.912010917440057);
+  const markers = routeMilestones(reference.points);
+  assert.deepEqual(
+    markers.map((m) => m.meters / 1000),
+    [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550],
+  );
+  const { referenceWaypoints, mileageSpan } = await import("../lib/mileage");
+  const profile = buildElevationProfile(reference, undefined, reference);
+  assert.equal(profile.reference.name, reference.name);
+  assert.ok(Math.abs(profile.meters - distance(reference.points)) < 0.001);
+  const positions = referenceWaypoints(
+    {
+      ...reference,
+      waypoints: [
+        {
+          ...reference.points.at(-1)!,
+          id: "end",
+          name: "end",
+          kind: "custom",
+          note: "",
+        },
+        {
+          ...reference.points[0],
+          id: "start",
+          name: "start",
+          kind: "custom",
+          note: "",
+        },
+      ],
+    },
+    reference,
+  );
+  assert.equal(positions[0].waypoint.id, "start");
+  assert.ok(positions[0].meters! < 0.01);
+  assert.ok(Math.abs(positions.at(-1)!.meters! - 592611.2136798931) < 0.001);
+  assert.ok(
+    Math.abs(
+      mileageSpan(reference.points, reference)!.end - 592611.2136798931,
+    ) < 0.001,
+  );
+});
+
+test("1103 reference fallback includes new GPX stops and retains saveable two-route composition", async () => {
+  const reference = validateRoute(
+    JSON.parse(await readFile("public/data/twb-2026-1103.json", "utf8")),
+  );
+  const ride = validateRoute(
+    JSON.parse(await readFile("public/data/520-activity-slim.json", "utf8")),
+  );
+  const fallback = builtInRoute(reference, ride);
+  assert.equal(fallback.overlays![0].name, reference.name);
+  assert.equal(fallback.waypoints.length, 28);
+  assert.ok(fallback.waypoints.some((w) => w.name === "十三行(保)"));
+  assert.ok(
+    Buffer.byteLength(
+      JSON.stringify({ route: fallback, note: "new baseline" }),
+    ) < 1800000,
+  );
+  assert.equal(reference.points.length, 18605);
+  assert.equal(
+    buildElevationProfile(fallback, undefined, reference).reference.name,
+    reference.name,
+  );
+});
+
 test("automatic thinning retains corners, hill extrema, endpoints and GPS/elevation gaps", () => {
   const points = Array.from({ length: 15001 }, (_, i) => ({
     lat: 25 + (i > 7500 ? (i - 7500) * 0.000001 : 0),

@@ -64,7 +64,9 @@ export default function ElevationProfile({
       (bottom - top);
   return (
     <div className="profile-content">
-      <p className="profile-reference">里程基準：四極點620 起點（固定）</p>
+      <p className="profile-reference">
+        里程基準：{mileageReference.name} 起點
+      </p>
       {range ? (
         <div
           ref={scrollHost}
