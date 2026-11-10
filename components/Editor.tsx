@@ -31,6 +31,7 @@ import type { MapViewport } from "../lib/elevation";
 import Dialogs, { type Panel } from "./Dialogs";
 import {
   builtInRoute,
+  builtInRecordingId,
   addImportedRoute,
   activeRouteColor,
   overlayColor,
@@ -87,6 +88,7 @@ export default function Editor() {
       ? "本機"
       : "雲端";
   const [route, setRoute] = useState<RouteData | null>(null),
+    [builtInRecording, setBuiltInRecording] = useState<RouteData | null>(null),
     [mileageReference, setMileageReference] = useState<MileageReference | null>(
       null,
     ),
@@ -262,6 +264,26 @@ export default function Editor() {
       clearTimeout(timeout);
       controller.abort();
       window.removeEventListener("hashchange", captureSetup);
+    };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/data/620-recording-slim.json")
+      .then(async (response) => {
+        if (!response.ok) throw Error("620 騎乘紀錄載入失敗");
+        return validateRoute(await response.json());
+      })
+      .then((recording) => {
+        if (active) setBuiltInRecording(recording);
+      })
+      .catch((cause) => {
+        if (active)
+          setError(
+            cause instanceof Error ? cause.message : "620 騎乘紀錄載入失敗",
+          );
+      });
+    return () => {
+      active = false;
     };
   }, []);
   useEffect(() => {
@@ -532,6 +554,25 @@ export default function Editor() {
     [route, mileageReference],
   );
   const meters = route ? distance(route.points) : 0;
+  // The published recording is a read-only visual layer. Never put it in the
+  // editable route, autosaves, version history, or Garmin exports.
+  const displayRoute = useMemo(
+    () =>
+      route && builtInRecording
+        ? {
+            ...route,
+            overlays: [
+              ...(route.overlays ?? []),
+              {
+                id: builtInRecordingId,
+                name: builtInRecording.name,
+                points: builtInRecording.points,
+              },
+            ],
+          }
+        : route,
+    [route, builtInRecording],
+  );
   const stations = useMemo(
     () =>
       route && mileageReference
@@ -899,7 +940,7 @@ export default function Editor() {
         </aside>
         <div className="canvas" data-mode={mode}>
           <RouteMap
-            route={route}
+            route={displayRoute!}
             mileageReference={mileageReference}
             mode={mode}
             apiKey={apiKey}
@@ -983,7 +1024,9 @@ export default function Editor() {
               }
             >
               <Route size={17} />
-              <span>路線圖例 · {1 + (route.overlays?.length ?? 0)} 條</span>
+              <span>
+                路線圖例 · {1 + (displayRoute?.overlays?.length ?? 0)} 條
+              </span>
               <span className="panel-toggle-action">
                 {panelExpanded.legend ? "收合" : "展開"}
               </span>
@@ -1000,7 +1043,7 @@ export default function Editor() {
                   </small>
                 </span>
               </div>
-              {(route.overlays ?? []).map((layer, i) => (
+              {(displayRoute?.overlays ?? []).map((layer, i) => (
                 <div className="legend-row" key={layer.id}>
                   <i
                     className="reference-swatch"
@@ -1009,26 +1052,30 @@ export default function Editor() {
                   <span>
                     <b>{layer.name}</b>
                     <small>
-                      參考路線 · 路線長度{" "}
-                      {(distance(layer.points) / 1000).toFixed(1)} km
+                      {layer.id === builtInRecordingId
+                        ? "內建騎乘紀錄 · 點選路線查看時間與 GPS 估算速度"
+                        : "參考路線"}{" "}
+                      · 路線長度 {(distance(layer.points) / 1000).toFixed(1)} km
                     </small>
                   </span>
-                  <button
-                    className="icon-button"
-                    aria-label={`移除參考路線 ${layer.name}`}
-                    title="移除參考路線（可復原）"
-                    disabled={!canEdit}
-                    onClick={() =>
-                      edit({
-                        ...route,
-                        overlays: route.overlays?.filter(
-                          (l) => l.id !== layer.id,
-                        ),
-                      })
-                    }
-                  >
-                    <X size={14} />
-                  </button>
+                  {layer.id !== builtInRecordingId && (
+                    <button
+                      className="icon-button"
+                      aria-label={`移除參考路線 ${layer.name}`}
+                      title="移除參考路線（可復原）"
+                      disabled={!canEdit}
+                      onClick={() =>
+                        edit({
+                          ...route,
+                          overlays: route.overlays?.filter(
+                            (l) => l.id !== layer.id,
+                          ),
+                        })
+                      }
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               ))}
               <p>位置里程以四極點620起點為準；Garmin 匯出使用目前編輯路線</p>
@@ -1074,7 +1121,7 @@ export default function Editor() {
                 </span>
               </div>
               <ElevationProfile
-                route={route}
+                route={displayRoute!}
                 mileageReference={mileageReference}
                 viewport={viewport}
               />

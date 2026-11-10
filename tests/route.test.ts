@@ -678,6 +678,43 @@ test("1103 GPX reference keeps the complete new origin, distance, milestones and
   );
 });
 
+test("published 620 recording retains timed GPS speed samples without activity dates", async () => {
+  const text = await readFile("public/data/620-recording-slim.json", "utf8");
+  const recording = validateRoute(JSON.parse(text));
+  assert.equal(recording.name, "620 騎乘紀錄（車錶）");
+  assert.equal(recording.points.length, 3850);
+  assert.equal(recording.points.filter((p) => p.recordedTime).length, 3850);
+  assert.equal(
+    recording.points.filter((p) => p.speedSource === "gps").length,
+    3804,
+  );
+  assert.ok(Math.abs(distance(recording.points) - 435665.95644288753) < 0.01);
+  assert.equal(recording.points[0].recordedTime, "18:10:47");
+  assert.equal(recording.points.at(-1)!.recordedTime, "19:19:43");
+  assert.ok(
+    recording.points.every(
+      (p) => p.recordedSpeedKmh === undefined || p.speedSource === "gps",
+    ),
+  );
+  assert.ok(
+    recording.points.every((p) =>
+      Object.keys(p).every((key) =>
+        [
+          "lat",
+          "lng",
+          "ele",
+          "segment",
+          "recordedTime",
+          "recordedSpeedKmh",
+          "speedSource",
+        ].includes(key),
+      ),
+    ),
+  );
+  assert.doesNotMatch(text, /"timestampMs"|"powerWatts"|"recordedPower10sW"/);
+  assert.equal(recording.waypoints.length, 0);
+});
+
 test("1103 reference fallback includes new GPX stops and retains saveable two-route composition", async () => {
   const reference = validateRoute(
     JSON.parse(await readFile("public/data/twb-2026-1103.json", "utf8")),

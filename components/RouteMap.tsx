@@ -11,6 +11,7 @@ import {
 import {
   groups,
   activeRouteColor,
+  builtInRecordingId,
   overlayColor,
   nearestSegment,
   routeMilestones,
@@ -91,6 +92,7 @@ export default function RouteMap(props: Props) {
       speedKmh?: number;
       speedSource?: "device" | "gps";
       power10sW?: number;
+      hasPower: boolean;
       pinned: boolean;
     } | null>(null);
   const timeFrame = useRef<number | null>(null);
@@ -184,6 +186,7 @@ export default function RouteMap(props: Props) {
 
   function bindRecordingTime(line: any, points: TrackPoint[], name: string) {
     if (!points.some((p) => p.recordedTime)) return;
+    const hasPower = points.some((p) => p.recordedPower10sW !== undefined);
     const google = adapter.current === "google";
     const show = (event: any, pinned: boolean) => {
       if (state.current.mode !== "browse" || (!pinned && pinnedTimeTip.current))
@@ -222,6 +225,7 @@ export default function RouteMap(props: Props) {
                 speedKmh: point.recordedSpeedKmh,
                 speedSource: point.speedSource,
                 power10sW: point.recordedPower10sW,
+                hasPower,
                 pinned,
               }
             : null,
@@ -567,6 +571,7 @@ export default function RouteMap(props: Props) {
     if (!ready || !map.current) return;
     clear(layers);
     const s = props;
+    const builtInLines: any[] = [];
     // Wide, dashed reference strokes remain visible beneath coincident active tracks.
     (s.route.overlays ?? []).forEach((layer, index) => {
       groups(layer.points).forEach((ps) => {
@@ -579,7 +584,7 @@ export default function RouteMap(props: Props) {
             strokeOpacity: 0,
             clickable: s.mode === "browse" && ps.some((p) => p.recordedTime),
             geodesic: true,
-            zIndex: index,
+            zIndex: layer.id === builtInRecordingId ? 12 : index,
             icons: [
               {
                 icon: {
@@ -596,6 +601,7 @@ export default function RouteMap(props: Props) {
           });
           bindRecordingTime(line, ps, layer.name);
           layers.current.push(line);
+          if (layer.id === builtInRecordingId) builtInLines.push(line);
         } else {
           const line = L.current!.polyline(
             ps.map((p) => [p.lat, p.lng]),
@@ -611,6 +617,7 @@ export default function RouteMap(props: Props) {
           ).addTo(map.current);
           bindRecordingTime(line, ps, layer.name);
           layers.current.push(line);
+          if (layer.id === builtInRecordingId) builtInLines.push(line);
         }
       });
     });
@@ -648,6 +655,8 @@ export default function RouteMap(props: Props) {
         layers.current.push(line);
       }
     });
+    if (adapter.current === "osm")
+      builtInLines.forEach((line) => line.bringToFront());
 
     routeMilestones(s.mileageReference.points).forEach((p) => {
       const label = String(p.meters / 1000);
@@ -948,14 +957,16 @@ export default function RouteMap(props: Props) {
                   : recordTip.speedKmh.toFixed(1) + " km/h"}
               </dd>
             </div>
-            <div>
-              <dt>10秒平均功率</dt>
-              <dd>
-                {recordTip.power10sW === undefined
-                  ? "資料不足"
-                  : Math.round(recordTip.power10sW) + " W"}
-              </dd>
-            </div>
+            {recordTip.hasPower && (
+              <div>
+                <dt>10秒平均功率</dt>
+                <dd>
+                  {recordTip.power10sW === undefined
+                    ? "資料不足"
+                    : Math.round(recordTip.power10sW) + " W"}
+                </dd>
+              </div>
+            )}
           </dl>
           <span>最近紀錄點 · 台灣時間</span>
         </div>

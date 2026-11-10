@@ -28,6 +28,7 @@ export type RouteData = {
   overlays?: { id: string; name: string; points: TrackPoint[] }[];
 };
 export const activeRouteColor = "#ef5b35";
+export const builtInRecordingId = "built-in-620-recording";
 const overlayColors = [
   "#1769c2",
   "#8538b5",
