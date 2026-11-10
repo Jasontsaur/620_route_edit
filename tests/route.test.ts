@@ -1366,6 +1366,34 @@ test("record time tooltip selects an actual sample, never interpolates or invent
     );
 });
 
+test("620 recording click uses the same GPS sample for time, speed and fixed-origin mileage", async () => {
+  const { recordedPointAt, recordedMileageByPoint } =
+    await import("../lib/record-time");
+  const { projector } = await import("../lib/mileage");
+  const reference = validateRoute(
+    JSON.parse(await readFile("public/data/twb-2026-1103.json", "utf8")),
+  );
+  const recording = validateRoute(
+    JSON.parse(await readFile("public/data/620-recording-slim.json", "utf8")),
+  );
+  const mileage = recordedMileageByPoint(
+    recording.points,
+    projector(reference.points),
+  );
+  assert.equal(
+    recording.points.filter((point) => mileage.has(point)).length,
+    recording.points.length,
+  );
+  const clicked = recordedPointAt(recording.points, recording.points.at(-1)!)!;
+  assert.equal(clicked.recordedTime, "19:19:43");
+  assert.equal(clicked.recordedSpeedKmh, 49.2);
+  assert.equal((mileage.get(clicked)! / 1000).toFixed(1), "432.1");
+  assert.equal((mileage.get(recording.points[0])! / 1000).toFixed(1), "0.1");
+  assert.ok(
+    Math.abs(mileage.get(clicked)! - distance(recording.points)) > 3000,
+  );
+});
+
 test("520 default retains all 3892 validated clocks without publishing activity dates or changing geometry", async () => {
   const ride = validateRoute(
     JSON.parse(await readFile("public/data/520-activity-slim.json", "utf8")),

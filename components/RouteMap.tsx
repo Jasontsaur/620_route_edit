@@ -21,14 +21,14 @@ import {
 } from "../lib/route";
 import type * as Leaflet from "leaflet";
 import type { MapViewport } from "../lib/elevation";
-import type { MileageReference } from "../lib/mileage";
+import { projector, type MileageReference } from "../lib/mileage";
 import {
   wheelPixels,
   addWheelPixels,
   wheelZoomBatch,
   zoomCenter,
 } from "../lib/map-interaction";
-import { recordedPointAt } from "../lib/record-time";
+import { recordedMileageByPoint, recordedPointAt } from "../lib/record-time";
 import type { RestStop } from "../lib/rest-stops";
 export type Mode = "browse" | "edit" | "append" | "waypoint";
 type Props = {
@@ -101,6 +101,7 @@ export default function RouteMap(props: Props) {
       clock: string;
       speedKmh?: number;
       speedSource?: "device" | "gps";
+      meters?: number;
       power10sW?: number;
       hasPower: boolean;
       pinned: boolean;
@@ -195,9 +196,15 @@ export default function RouteMap(props: Props) {
     }
   };
 
-  function bindRecordingTime(line: any, points: TrackPoint[], name: string) {
+  function bindRecordingTime(
+    line: any,
+    points: TrackPoint[],
+    name: string,
+    project: ReturnType<typeof projector>,
+  ) {
     if (!points.some((p) => p.recordedTime)) return;
     const hasPower = points.some((p) => p.recordedPower10sW !== undefined);
+    const mileage = recordedMileageByPoint(points, project);
     const google = adapter.current === "google";
     const show = (event: any, pinned: boolean) => {
       if (state.current.mode !== "browse" || (!pinned && pinnedTimeTip.current))
@@ -217,7 +224,7 @@ export default function RouteMap(props: Props) {
       const y = Math.max(
         8,
         Math.min(
-          bounds.height - 145,
+          bounds.height - 178,
           (mouse?.clientY ?? bounds.top + bounds.height / 2) - bounds.top + 14,
         ),
       );
@@ -235,6 +242,7 @@ export default function RouteMap(props: Props) {
                 clock: point.recordedTime,
                 speedKmh: point.recordedSpeedKmh,
                 speedSource: point.speedSource,
+                meters: mileage.get(point),
                 power10sW: point.recordedPower10sW,
                 hasPower,
                 pinned,
@@ -585,6 +593,7 @@ export default function RouteMap(props: Props) {
     if (!ready || !map.current) return;
     clear(layers);
     const s = props;
+    const projectMileage = projector(s.mileageReference.points);
     const builtInLines: any[] = [];
     // Wide, dashed reference strokes remain visible beneath coincident active tracks.
     (s.route.overlays ?? []).forEach((layer, index) => {
@@ -613,7 +622,7 @@ export default function RouteMap(props: Props) {
               },
             ],
           });
-          bindRecordingTime(line, ps, layer.name);
+          bindRecordingTime(line, ps, layer.name, projectMileage);
           layers.current.push(line);
           if (layer.id === builtInRecordingId) builtInLines.push(line);
         } else {
@@ -629,7 +638,7 @@ export default function RouteMap(props: Props) {
               bubblingMouseEvents: false,
             },
           ).addTo(map.current);
-          bindRecordingTime(line, ps, layer.name);
+          bindRecordingTime(line, ps, layer.name, projectMileage);
           layers.current.push(line);
           if (layer.id === builtInRecordingId) builtInLines.push(line);
         }
@@ -650,7 +659,7 @@ export default function RouteMap(props: Props) {
         line.addListener("click", (e: any) =>
           click({ lat: e.latLng.lat(), lng: e.latLng.lng() }),
         );
-        bindRecordingTime(line, ps, s.route.name);
+        bindRecordingTime(line, ps, s.route.name, projectMileage);
         layers.current.push(line);
       } else {
         const line = L.current!.polyline(
@@ -665,7 +674,7 @@ export default function RouteMap(props: Props) {
         line.on("click", (e: Leaflet.LeafletMouseEvent) =>
           click({ lat: e.latlng.lat, lng: e.latlng.lng }),
         );
-        bindRecordingTime(line, ps, s.route.name);
+        bindRecordingTime(line, ps, s.route.name, projectMileage);
         layers.current.push(line);
       }
     });
@@ -1035,6 +1044,14 @@ export default function RouteMap(props: Props) {
           <small>{recordTip.name}</small>
           <strong>{recordTip.clock}</strong>
           <dl className="record-metrics">
+            <div>
+              <dt>四極點620 里程</dt>
+              <dd>
+                {recordTip.meters === undefined
+                  ? "無法對齊"
+                  : (recordTip.meters / 1000).toFixed(1) + " km"}
+              </dd>
+            </div>
             <div>
               <dt>
                 速度{recordTip.speedSource === "gps" ? "（GPS估算）" : ""}
