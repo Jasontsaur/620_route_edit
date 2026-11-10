@@ -28,6 +28,7 @@ import { SharedRouteClient, CloudSaveError } from "../lib/shared-client";
 import type { SaveAction } from "../lib/shared-store";
 import type { ImportSummary } from "../lib/compact-import";
 import type { MapViewport } from "../lib/elevation";
+import type { RestStop } from "../lib/rest-stops";
 import Dialogs, { type Panel } from "./Dialogs";
 import {
   builtInRoute,
@@ -89,6 +90,7 @@ export default function Editor() {
       : "雲端";
   const [route, setRoute] = useState<RouteData | null>(null),
     [builtInRecording, setBuiltInRecording] = useState<RouteData | null>(null),
+    [restStops, setRestStops] = useState<RestStop[]>([]),
     [mileageReference, setMileageReference] = useState<MileageReference | null>(
       null,
     ),
@@ -264,6 +266,41 @@ export default function Editor() {
       clearTimeout(timeout);
       controller.abort();
       window.removeEventListener("hashchange", captureSetup);
+    };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    fetch("/data/620-rest-stops.json")
+      .then(async (response) => {
+        if (!response.ok) throw Error("620 停留點載入失敗");
+        const data = (await response.json()) as { stops?: RestStop[] };
+        if (
+          !Array.isArray(data.stops) ||
+          data.stops.length > 500 ||
+          !data.stops.every(
+            (stop) =>
+              typeof stop.id === "string" &&
+              Number.isFinite(stop.lat) &&
+              Number.isFinite(stop.lng) &&
+              Number.isFinite(stop.durationMinutes) &&
+              stop.durationMinutes > 1 &&
+              typeof stop.inferredFromGap === "boolean",
+          )
+        )
+          throw Error("620 停留點資料格式錯誤");
+        return data.stops;
+      })
+      .then((stops) => {
+        if (active) setRestStops(stops);
+      })
+      .catch((cause) => {
+        if (active)
+          setError(
+            cause instanceof Error ? cause.message : "620 停留點載入失敗",
+          );
+      });
+    return () => {
+      active = false;
     };
   }, []);
   useEffect(() => {
@@ -941,6 +978,7 @@ export default function Editor() {
         <div className="canvas" data-mode={mode}>
           <RouteMap
             route={displayRoute!}
+            restStops={restStops}
             mileageReference={mileageReference}
             mode={mode}
             apiKey={apiKey}
@@ -1078,6 +1116,15 @@ export default function Editor() {
                   )}
                 </div>
               ))}
+              {restStops.length > 0 && (
+                <div className="legend-row">
+                  <i className="rest-swatch" />
+                  <span>
+                    <b>推定停留點 · {restStops.length} 處</b>
+                    <small>紫色記號可點選；開關可顯示全部停留時間</small>
+                  </span>
+                </div>
+              )}
               <p>位置里程以四極點620起點為準；Garmin 匯出使用目前編輯路線</p>
               {!apiKey && <p>設定 Google Maps 金鑰即可切換底圖</p>}
             </div>

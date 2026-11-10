@@ -12,6 +12,7 @@ for (const source of [
   "lib/map-interaction.ts",
   "lib/record-time.ts",
   "lib/record-metrics.ts",
+  "lib/rest-stops.ts",
   "lib/version-owner.ts",
   "lib/maps-settings.ts",
   "lib/shared-access.ts",
@@ -30,7 +31,7 @@ for (const source of [
       },
     })
     .outputText.replace(
-      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|mileage|map-interaction|record-time|record-metrics|version-owner|maps-settings|shared-access|shared-store|shared-client|device-location|compact-import|xml-track))\1/g,
+      /(['"])(\.\.?\/(?:lib\/)?(?:route|files|elevation|mileage|map-interaction|record-time|record-metrics|rest-stops|version-owner|maps-settings|shared-access|shared-store|shared-client|device-location|compact-import|xml-track))\1/g,
       "$1$2.mjs$1",
     );
   const target = ".sites-runtime/test/" + source.replace(/\.ts$/, ".mjs");

@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/exhaustive-deps -- Map lifecycle follows key/route/mode; event callbacks read current props through a ref. */
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { LocateFixed, LoaderCircle, X } from "lucide-react";
+import { Clock3, LocateFixed, LoaderCircle, X } from "lucide-react";
 import {
   DeviceLocationTracker,
   locationOff,
@@ -29,9 +29,11 @@ import {
   zoomCenter,
 } from "../lib/map-interaction";
 import { recordedPointAt } from "../lib/record-time";
+import type { RestStop } from "../lib/rest-stops";
 export type Mode = "browse" | "edit" | "append" | "waypoint";
 type Props = {
   route: RouteData;
+  restStops: RestStop[];
   mileageReference: MileageReference;
   mode: Mode;
   apiKey: string;
@@ -68,6 +70,12 @@ function loadGoogle(key: string) {
   });
   return googlePromise;
 }
+function restMarkerSvg(stop: RestStop, showTime: boolean) {
+  const label = `${stop.durationMinutes.toFixed(1)} 分`;
+  return showTime
+    ? `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="50" viewBox="0 0 80 50"><rect x="2" y="2" width="76" height="25" rx="12" fill="white" stroke="#7c3aed" stroke-width="2"/><text x="40" y="19" text-anchor="middle" font-family="Arial,sans-serif" font-size="12" font-weight="700" fill="#5422a5">${label}</text><path d="M40 27v8" stroke="#7c3aed" stroke-width="2"/><circle cx="40" cy="40" r="8" fill="#7c3aed" stroke="white" stroke-width="3"/></svg>`
+    : `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#7c3aed" stroke="white" stroke-width="3"/></svg>`;
+}
 export default function RouteMap(props: Props) {
   const host = useRef<HTMLDivElement>(null),
     state = useRef(props),
@@ -75,6 +83,8 @@ export default function RouteMap(props: Props) {
     adapter = useRef<"google" | "osm">("osm"),
     L = useRef<typeof Leaflet | null>(null),
     layers = useRef<any[]>([]),
+    restLayers = useRef<any[]>([]),
+    restInfo = useRef<any>(null),
     locationLayers = useRef<any[]>([]),
     lastViewport = useRef<MapViewport | null>(null),
     handles = useRef<any[]>([]),
@@ -94,7 +104,8 @@ export default function RouteMap(props: Props) {
       power10sW?: number;
       hasPower: boolean;
       pinned: boolean;
-    } | null>(null);
+    } | null>(null),
+    [showAllStopTimes, setShowAllStopTimes] = useState(false);
   const timeFrame = useRef<number | null>(null);
   const pinnedTimeTip = useRef(false);
   const locationTracker = useRef<DeviceLocationTracker | null>(null);
@@ -556,6 +567,9 @@ export default function RouteMap(props: Props) {
       if (wheelTimer !== undefined) clearTimeout(wheelTimer);
       if (map.current) {
         clear(layers);
+        clear(restLayers);
+        restInfo.current?.close();
+        restInfo.current = null;
         clear(handles);
         clear(locationLayers);
         if (adapter.current === "osm") {
@@ -754,6 +768,66 @@ export default function RouteMap(props: Props) {
     renderHandles();
   }, [props.route, props.mileageReference, props.mode, ready]);
   useEffect(() => {
+    if (!ready || !map.current) return;
+    clear(restLayers);
+    restInfo.current?.close();
+    restInfo.current = null;
+    for (const stop of props.restStops) {
+      const svg = restMarkerSvg(stop, showAllStopTimes);
+      const size = showAllStopTimes ? [80, 50] : [24, 24];
+      const anchor = showAllStopTimes ? [40, 40] : [12, 12];
+      const content = document.createElement("div");
+      const heading = document.createElement("strong");
+      heading.textContent = `停留 ${stop.durationMinutes.toFixed(1)} 分鐘`;
+      const detail = document.createElement("p");
+      detail.textContent = stop.inferredFromGap
+        ? "依紀錄暫停前後位置推定；中間移動時間不計入。"
+        : "依連續 GPS 低速紀錄計算。";
+      content.appendChild(heading);
+      content.appendChild(detail);
+      if (adapter.current === "google") {
+        const google = window.google.maps;
+        const marker = new google.Marker({
+          map: map.current,
+          position: stop,
+          title: `620 停留點：${stop.durationMinutes.toFixed(1)} 分鐘`,
+          clickable: props.mode === "browse",
+          zIndex: 25,
+          icon: {
+            url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+            scaledSize: new google.Size(size[0], size[1]),
+            anchor: new google.Point(anchor[0], anchor[1]),
+          },
+        });
+        marker.addListener("click", () => {
+          restInfo.current?.close();
+          restInfo.current = new google.InfoWindow({ content });
+          restInfo.current.open({ map: map.current, anchor: marker });
+        });
+        restLayers.current.push(marker);
+      } else {
+        const marker = L.current!.marker([stop.lat, stop.lng], {
+          title: `620 停留點：${stop.durationMinutes.toFixed(1)} 分鐘`,
+          interactive: props.mode === "browse",
+          zIndexOffset: -50,
+          icon: L.current!.divIcon({
+            className: "rest-marker",
+            html: svg,
+            iconSize: [size[0], size[1]],
+            iconAnchor: [anchor[0], anchor[1]],
+          }),
+        }).addTo(map.current);
+        marker.bindPopup(content);
+        restLayers.current.push(marker);
+      }
+    }
+    return () => {
+      clear(restLayers);
+      restInfo.current?.close();
+      restInfo.current = null;
+    };
+  }, [props.restStops, props.mode, showAllStopTimes, ready]);
+  useEffect(() => {
     if (ready) fit();
   }, [props.fitSignal, ready]);
   useEffect(() => {
@@ -860,7 +934,7 @@ export default function RouteMap(props: Props) {
       <section
         className="location-control"
         data-state={location.status}
-        aria-label="裝置定位"
+        aria-label="地圖控制"
       >
         <div className="location-buttons">
           <button
@@ -914,6 +988,20 @@ export default function RouteMap(props: Props) {
               <span>{location.message}</span>
             )}
           </div>
+        )}
+        {props.restStops.length > 0 && (
+          <button
+            className="stop-time-toggle"
+            onClick={() => setShowAllStopTimes((visible) => !visible)}
+            aria-pressed={showAllStopTimes}
+            title={showAllStopTimes ? "隱藏全部停留時間" : "顯示全部停留時間"}
+          >
+            <Clock3 size={16} />
+            <span>
+              {showAllStopTimes ? "隱藏停留時間" : "顯示全部停留時間"} ·{" "}
+              {props.restStops.length}
+            </span>
+          </button>
         )}
       </section>
       {provider === "Google Maps" && (

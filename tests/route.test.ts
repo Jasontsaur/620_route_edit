@@ -13,8 +13,10 @@ import {
   orderedWaypoints,
   addImportedRoute,
   builtInRoute,
+  nearestSegment,
   type RouteData,
 } from "../lib/route";
+import { detectRestStops } from "../lib/rest-stops";
 import { exportGpx, exportTcx, exportFit, importFile } from "../lib/files";
 import {
   buildElevationProfile,
@@ -713,6 +715,94 @@ test("published 620 recording retains timed GPS speed samples without activity d
   );
   assert.doesNotMatch(text, /"timestampMs"|"powerWatts"|"recordedPower10sW"/);
   assert.equal(recording.waypoints.length, 0);
+});
+
+test("rest stops require over a minute below 5 km/h and split across GPS movement", () => {
+  const stationary = Array.from({ length: 71 }, (_, second) => ({
+    lat: 25,
+    lng: 121,
+    timestampMs: second * 1000,
+    segment: 0,
+  }));
+  const observed = detectRestStops(stationary);
+  assert.equal(observed.length, 1);
+  assert.equal(observed[0].durationMinutes, 1.2);
+  assert.equal(observed[0].inferredFromGap, false);
+  assert.equal(detectRestStops(stationary.slice(0, 61)).length, 0);
+  assert.equal(
+    detectRestStops([
+      stationary[0],
+      { lat: 25, lng: 121.002, timestampMs: 600000, segment: 0 },
+    ]).length,
+    0,
+  );
+  assert.equal(
+    detectRestStops([
+      stationary[0],
+      { lat: 25, lng: 121, timestampMs: 120000, segment: 1 },
+    ]).length,
+    0,
+  );
+});
+
+test("nearby auto-pause gaps merge without counting travel time", () => {
+  const stops = detectRestStops([
+    { lat: 25, lng: 121, timestampMs: 0 },
+    { lat: 25, lng: 121.0001, timestampMs: 120000 },
+    { lat: 25, lng: 121.00011, timestampMs: 180000 },
+    { lat: 25, lng: 121.00012, timestampMs: 300000 },
+  ]);
+  assert.equal(stops.length, 1);
+  assert.equal(stops[0].durationMinutes, 4);
+  assert.equal(stops[0].inferredFromGap, true);
+  assert.equal(stops[0].intervalCount, 2);
+});
+
+test("published rest markers match the partial 620 track and omit raw dates", async () => {
+  const text = await readFile("public/data/620-rest-stops.json", "utf8");
+  const data = JSON.parse(text) as {
+    stops: ReturnType<typeof detectRestStops>;
+  };
+  const ride = validateRoute(
+    JSON.parse(await readFile("public/data/620-recording-slim.json", "utf8")),
+  );
+  assert.equal(data.stops.length, 38);
+  assert.equal(
+    data.stops.reduce((n, stop) => n + stop.intervalCount, 0),
+    58,
+  );
+  assert.ok(data.stops.every((stop) => stop.inferredFromGap));
+  assert.ok(data.stops.every((stop) => stop.durationMinutes > 1));
+  assert.ok(
+    data.stops.every(
+      (stop) => Number.isFinite(stop.lat) && Number.isFinite(stop.lng),
+    ),
+  );
+  assert.equal(data.stops[0].durationMinutes, 1.5);
+  assert.equal(data.stops.at(-1)!.durationMinutes, 12.2);
+  assert.doesNotMatch(text, /"timestampMs"|"startMs"|"endMs"|2026-11-/);
+  for (const stop of data.stops) {
+    const index = nearestSegment(ride.points, stop);
+    const a = ride.points[index - 1],
+      b = ride.points[index];
+    const cos = Math.cos((stop.lat * Math.PI) / 180);
+    const dx = (b.lng - a.lng) * cos,
+      dy = b.lat - a.lat;
+    const t = Math.max(
+      0,
+      Math.min(
+        1,
+        ((stop.lng - a.lng) * cos * dx + (stop.lat - a.lat) * dy) /
+          (dx * dx + dy * dy || 1),
+      ),
+    );
+    assert.ok(
+      haversine(stop, {
+        lat: a.lat + (b.lat - a.lat) * t,
+        lng: a.lng + (b.lng - a.lng) * t,
+      }) < 0.1,
+    );
+  }
 });
 
 test("1103 reference fallback includes new GPX stops and retains saveable two-route composition", async () => {

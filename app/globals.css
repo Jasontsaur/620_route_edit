@@ -532,6 +532,15 @@ button.primary:hover {
 .legend-row > i.reference-swatch {
   border-top-style: dashed;
 }
+.legend-row > i.rest-swatch {
+  width: 12px;
+  height: 12px;
+  margin: 0 8px;
+  border: 2px solid white;
+  border-radius: 50%;
+  background: #7c3aed;
+  box-shadow: 0 0 0 1px #7c3aed;
+}
 .legend-row > span {
   min-width: 0;
   flex: 1;
@@ -584,6 +593,15 @@ button.primary:hover {
 .distance-marker svg {
   display: block;
   overflow: visible;
+}
+.rest-marker {
+  background: transparent;
+  border: 0;
+}
+.rest-marker svg {
+  display: block;
+  overflow: visible;
+  filter: drop-shadow(0 1px 3px #173f5533);
 }
 .station-marker {
   background: var(--navy);
@@ -1545,6 +1563,23 @@ code {
 .location-control[data-state="error"] .location-status {
   background: #fff0e9;
   color: #963d27;
+}
+.stop-time-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0 auto;
+  min-height: 42px;
+  padding: 8px 10px;
+  background: #fff;
+  color: #5422a5;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 3px 20px #173f551a;
+}
+.stop-time-toggle[aria-pressed="true"] {
+  background: #f3edff;
+  border-color: #bba3e7;
 }
 .location-spinner {
   animation: location-spin 1s linear infinite;
